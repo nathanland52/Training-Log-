@@ -279,6 +279,32 @@ function restoreBackup(text,msg){
   sortSessions();writeCache();renderSetup();
   document.getElementById("b-msg").textContent=added+" session"+(added===1?"":"s")+" restored. Sessions already on this phone were kept.";
 }
+/* ---------- Text export for review in a Claude chat ---------- */
+function sessionText(s){
+  const t=TYPES[s.type]||{label:s.type,met:[]},met=t.met[s.intensity];
+  const d=new Date(s.date+"T00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
+  let out=d+" | "+t.label+" | "+s.minutes+" min | "+(INTENSITY[s.intensity]||"")+" effort"+(met?" (MET "+met+")":"")+" | body weight "+s.weightKg+" kg | "+(s.kj||0)+" kJ";
+  (s.exercises||[]).forEach(ex=>{out+="\n- "+ex.name+(ex.group?" ["+ex.group+"]":"")+": "+ex.sets.map(fmtSet).join(", ");});
+  if(s.notes)out+="\nNotes: "+s.notes;
+  return out;
+}
+function exportHeader(what){
+  return "Training Log export for Claude: "+what+"\nExported "+new Date().toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"})
+    +". Current body weight "+(state.settings.weightKg||"not set")+" kg. kJ formula: MET × body weight kg × hours × 4.184. Sets show weight × reps, or time held.\n\n";
+}
+function claudeText(key){
+  if(key==="all"||key==="28"){
+    const list=key==="all"?state.sessions:state.sessions.filter(s=>daysSince(s.date)<=28);
+    if(!list.length)return "";
+    return exportHeader(key==="all"?"full history, "+list.length+" sessions, newest first":"last 4 weeks, "+list.length+" sessions, newest first")+list.map(sessionText).join("\n\n");
+  }
+  const one=state.sessions.find(s=>s.id===key);
+  return one?exportHeader("one session")+sessionText(one):"";
+}
+function reviewCard(){
+  return `<section class="card"><h2>Review with Claude</h2><p class="muted">Copies your sessions as text. Paste it into a Claude chat and ask for a review.</p>
+    <div class="btns"><button class="btn primary" data-claude="28">Copy last 4 weeks</button><button class="btn" data-claude="all">Copy all history</button></div></section>`;
+}
 /* ---------- Analysis ---------- */
 function exGroups(ex){const lib=EX_BY_NAME[ex.name];const gs=[ex.group||(lib&&lib.g)];if(lib&&lib.also)gs.push(...lib.also);return gs.filter(Boolean);}
 function lastByGroup(){
@@ -377,7 +403,7 @@ function renderToday(){
     h+=`<section class="card"><h2>Worth considering</h2>`;
     h+=tips.length?`<ul class="list">${tips.map(t=>`<li class="item tip"><h3>${esc(t.title)}</h3><small>${esc(t.text)}</small></li>`).join("")}</ul>`
       :`<p class="muted">No changes to suggest yet. Suggestions appear as your lifting history builds up.</p>`;
-    h+=`</section>`;
+    h+=`</section>`+reviewCard();
   }
   view.innerHTML=h;
 }
@@ -396,7 +422,7 @@ function renderLog(){
   const kg=+state.settings.weightKg||0,isW=draft.type==="weights";
   let h="";
   if(lastSaved){
-    h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">about ${num(lastSaved.kj/4.184)} kcal</span></div>${healthButtons(lastSaved.kj)}</section>`;
+    h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">about ${num(lastSaved.kj/4.184)} kcal</span></div>${healthButtons(lastSaved.kj)}<div class="btns"><button class="btn" data-claude="${esc(lastSaved.id)}">Copy session for Claude</button></div></section>`;
   }
   h+=`<section class="card"><h2>Log a session</h2>
     <div class="row"><label for="f-date">Date<input id="f-date" type="date" value="${esc(draft.date)}" max="${today()}"></label>
@@ -455,7 +481,7 @@ function sparkline(points,unit){
 function renderHistory(){
   const names=[];state.sessions.forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name&&!names.includes(e.name))names.push(e.name);}));names.sort();
   if(!names.includes(progressEx))progressEx=names[0]||"";
-  let h="";
+  let h=state.sessions.length?reviewCard():"";
   if(names.length){
     const hist=exerciseHistory(progressEx).slice().reverse(),timed=hist.some(x=>x.ex.timed);
     const val=x=>timed?(x.top.secs||0):x.top.kg,pts=hist.map(x=>({kg:val(x)}));
@@ -471,7 +497,7 @@ function renderHistory(){
       ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc(fmtSet(st))).join(", ")}</span>`).join("")}</div>`:""}
       ${s.notes?`<p class="muted">${esc(s.notes)}</p>`:""}
       <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${s.kj||0}">Add to Health</a>
-      <button class="btn small" data-copy="${s.kj||0}">Copy kJ</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
+      <button class="btn small" data-copy="${s.kj||0}">Copy kJ</button><button class="btn small" data-claude="${esc(s.id)}">Copy for Claude</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
   });
   view.innerHTML=h;
 }
@@ -529,6 +555,18 @@ view.addEventListener("change",e=>{
 });
 view.addEventListener("click",async e=>{
   const t=e.target.closest("button,a");if(!t)return;
+  if(t.dataset.claude){
+    const text=claudeText(t.dataset.claude);
+    if(!text){t.textContent="Nothing to copy yet";return;}
+    try{await navigator.clipboard.writeText(text);t.textContent="Copied. Paste into Claude";}
+    catch(err){
+      // Clipboard blocked: show the text so it can be selected and copied by hand
+      let box=t.parentNode.parentNode.querySelector("textarea.manual");
+      if(!box){box=document.createElement("textarea");box.className="manual";box.rows=8;box.readOnly=true;box.setAttribute("aria-label","Text to copy for Claude");t.parentNode.after(box);}
+      box.value=text;box.focus();box.select();t.textContent="Select all and copy";
+    }
+    return;
+  }
   if(t.dataset.copy){
     try{await navigator.clipboard.writeText(String(t.dataset.copy));t.textContent="Copied";}catch(err){t.textContent=t.dataset.copy+" kJ";}
     return;
