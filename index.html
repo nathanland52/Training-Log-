@@ -195,6 +195,8 @@ function fmtSet(st){
 function fmtTop(t,timed){return timed?(t.kg?t.kg+" kg × ":"")+fmtSecs(t.secs):t.kg+" kg × "+t.reps;}
 function num(n){return Math.round(n).toLocaleString("en-AU");}
 function calcKj(type,intensity,minutes,kg){const t=TYPES[type]||TYPES.weights;return Math.round(t.met[intensity]*kg*(minutes/60)*4.184);}
+// Active energy leaves out what the body burns at rest anyway (1 MET), which is what Apple Health's Active Energy expects.
+function activeKj(x){const t=TYPES[x.type]||TYPES.weights,met=t.met[x.intensity]||t.met[1];return Math.round((met-1)*(+x.weightKg||0)*((+x.minutes||0)/60)*4.184);}
 function setStatus(t){document.getElementById("status").textContent=t;}
 
 function readCache(){
@@ -283,7 +285,7 @@ function restoreBackup(text,msg){
 function sessionText(s){
   const t=TYPES[s.type]||{label:s.type,met:[]},met=t.met[s.intensity];
   const d=new Date(s.date+"T00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
-  let out=d+" | "+t.label+" | "+s.minutes+" min | "+(INTENSITY[s.intensity]||"")+" effort"+(met?" (MET "+met+")":"")+" | body weight "+s.weightKg+" kg | "+(s.kj||0)+" kJ";
+  let out=d+" | "+t.label+" | "+s.minutes+" min | "+(INTENSITY[s.intensity]||"")+" effort"+(met?" (MET "+met+")":"")+" | body weight "+s.weightKg+" kg | "+(s.kj||0)+" kJ total, "+activeKj(s)+" kJ active";
   (s.exercises||[]).forEach(ex=>{out+="\n- "+ex.name+(ex.group?" ["+ex.group+"]":"")+": "+ex.sets.map(fmtSet).join(", ");});
   if(s.notes)out+="\nNotes: "+s.notes;
   return out;
@@ -422,7 +424,7 @@ function renderLog(){
   const kg=+state.settings.weightKg||0,isW=draft.type==="weights";
   let h="";
   if(lastSaved){
-    h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">about ${num(lastSaved.kj/4.184)} kcal</span></div>${healthButtons(lastSaved.kj)}<div class="btns"><button class="btn" data-claude="${esc(lastSaved.id)}">Copy session for Claude</button></div></section>`;
+    h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">total, about ${num(lastSaved.kj/4.184)} kcal</span></div><p class="muted">${num(activeKj(lastSaved))} kJ of that is active energy, above what you burn at rest. That is the figure sent to Apple Health.</p>${healthButtons(activeKj(lastSaved))}<div class="btns"><button class="btn" data-claude="${esc(lastSaved.id)}">Copy session for Claude</button></div></section>`;
   }
   h+=`<section class="card"><h2>Log a session</h2>
     <div class="row"><label for="f-date">Date<input id="f-date" type="date" value="${esc(draft.date)}" max="${today()}"></label>
@@ -462,7 +464,7 @@ function updateEstimate(){
 function healthButtons(kj){
   const name=state.settings.shortcutName||"Log Gym kJ";
   return `<div class="btns"><a class="btn primary" href="shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=text&text=${kj}">Add to Apple Health</a>
-    <button class="btn" data-copy="${kj}">Copy kJ</button></div>
+    <button class="btn" data-copy="${kj}">Copy active kJ</button></div>
     <small class="muted">Needs the one-off shortcut described under Setup. If the button does nothing, copy the figure and run the shortcut yourself.</small>`;
 }
 
@@ -493,11 +495,11 @@ function renderHistory(){
   state.sessions.forEach(s=>{
     const t=TYPES[s.type]||{label:s.type};
     h+=`<section class="card" data-id="${esc(s.id)}"><div class="sess-head"><h3>${esc(t.label)} · ${fmtDate(s.date)}</h3><b>${num(s.kj||0)} kJ</b></div>
-      <p class="muted">${esc(s.minutes)} min · ${INTENSITY[s.intensity]||""} effort${s.weightKg?" · at "+esc(s.weightKg)+" kg":""}</p>
+      <p class="muted">${esc(s.minutes)} min · ${INTENSITY[s.intensity]||""} effort${s.weightKg?" · at "+esc(s.weightKg)+" kg":""} · ${num(activeKj(s))} kJ active</p>
       ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc(fmtSet(st))).join(", ")}</span>`).join("")}</div>`:""}
       ${s.notes?`<p class="muted">${esc(s.notes)}</p>`:""}
-      <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${s.kj||0}">Add to Health</a>
-      <button class="btn small" data-copy="${s.kj||0}">Copy kJ</button><button class="btn small" data-claude="${esc(s.id)}">Copy for Claude</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
+      <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${activeKj(s)}">Add to Health</a>
+      <button class="btn small" data-copy="${activeKj(s)}">Copy active kJ</button><button class="btn small" data-claude="${esc(s.id)}">Copy for Claude</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
   });
   view.innerHTML=h;
 }
@@ -521,7 +523,8 @@ function renderSetup(){
     <li>Run it once and allow Shortcuts to write Active Energy to Health.</li></ol>
     <p class="muted">If you wear an Apple Watch during training it already records active energy, so adding this figure as well would count the session twice.</p></section>
     <section class="card"><h2>How the kJ figure is worked out</h2>
-    <p>kJ = effort rating (MET) × body weight in kg × hours × 4.184. MET values come from standard published tables for each activity at light, moderate and hard effort. Treat the result as an estimate, usually within about 20 percent.</p></section>`;
+    <p>kJ = effort rating (MET) × body weight in kg × hours × 4.184. MET values come from standard published tables for each activity at light, moderate and hard effort. Treat the result as an estimate, usually within about 20 percent.</p>
+    <p>The app shows that total. The Apple Health buttons send the active part only, which leaves out what you would burn at rest over the same time (MET minus 1 in the formula), because that is what Health's Active Energy measures.</p></section>`;
 }
 
 /* ---------- Events ---------- */
