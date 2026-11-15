@@ -126,6 +126,7 @@ const EXERCISES = [
   {n:"Barbell row",g:"Back",also:["Arms"]},
   {n:"Dumbbell row",g:"Back",also:["Arms"]},
   {n:"Seated cable row",g:"Back",also:["Arms"]},
+  {n:"Dead hang",g:"Back",t:1},
   {n:"Overhead press",g:"Shoulders",also:["Arms"]},
   {n:"Dumbbell shoulder press",g:"Shoulders",also:["Arms"]},
   {n:"Machine shoulder press",g:"Shoulders",swap:["Overhead press","Pressing a free weight standing also trains your trunk to hold you steady."]},
@@ -135,6 +136,7 @@ const EXERCISES = [
   {n:"Front squat",g:"Quads",also:["Core"]},
   {n:"Bulgarian split squat",g:"Quads",also:["Hamstrings & glutes"]},
   {n:"Lunge",g:"Quads",also:["Hamstrings & glutes"]},
+  {n:"Wall sit",g:"Quads",t:1},
   {n:"Leg press",g:"Quads",swap:["Back squat","Squats load the same muscles and add the hips and trunk. A split squat is a good option if your back prefers less load."]},
   {n:"Leg extension",g:"Quads",swap:["Bulgarian split squat","It works the quads through a longer range and adds glutes and single-leg balance."]},
   {n:"Deadlift",g:"Hamstrings & glutes",also:["Back"]},
@@ -149,11 +151,12 @@ const EXERCISES = [
   {n:"Skull crusher",g:"Arms"},
   {n:"Close-grip bench press",g:"Arms",also:["Chest"]},
   {n:"Triceps kickback",g:"Arms",swap:["Dips","Kickbacks only load the triceps at the top. Dips or close-grip bench load them through the whole movement."]},
-  {n:"Plank",g:"Core"},
+  {n:"Plank",g:"Core",t:1},
+  {n:"Side plank",g:"Core",t:1},
   {n:"Hanging leg raise",g:"Core"},
   {n:"Ab wheel rollout",g:"Core"},
   {n:"Pallof press",g:"Core"},
-  {n:"Farmer's carry",g:"Core"},
+  {n:"Farmer's carry",g:"Core",t:1},
   {n:"Crunch or sit-up",g:"Core",swap:["Hanging leg raise","It trains the abs harder with less repeated bending of the lower back. Ab wheel rollouts work well too."]}
 ];
 const EX_BY_NAME = Object.fromEntries(EXERCISES.map(e=>[e.n,e]));
@@ -184,6 +187,12 @@ function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth
 function daysSince(dateStr){return Math.round((new Date(today()+"T00:00")-new Date(dateStr+"T00:00"))/86400000);}
 function fmtDate(s){return new Date(s+"T00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"});}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function fmtSecs(x){x=Math.round(+x||0);return x<60?x+" s":Math.floor(x/60)+":"+String(x%60).padStart(2,"0");}
+function fmtSet(st){
+  if(st.secs)return (+st.kg?st.kg+" kg × ":"")+fmtSecs(st.secs);
+  return (st.kg||0)+" kg × "+(st.reps||0);
+}
+function fmtTop(t,timed){return timed?(t.kg?t.kg+" kg × ":"")+fmtSecs(t.secs):t.kg+" kg × "+t.reps;}
 function num(n){return Math.round(n).toLocaleString("en-AU");}
 function calcKj(type,intensity,minutes,kg){const t=TYPES[type]||TYPES.weights;return Math.round(t.met[intensity]*kg*(minutes/60)*4.184);}
 function setStatus(t){document.getElementById("status").textContent=t;}
@@ -283,7 +292,10 @@ function ideasFor(group){
   const fresh=pool.filter(e=>!recent.has(e.n));
   return (fresh.length>=2?fresh:pool).slice(0,3).map(e=>e.n);
 }
-function topSet(ex){let kg=0,reps=0;(ex.sets||[]).forEach(st=>{const k=+st.kg||0,r=+st.reps||0;if(k>kg||(k===kg&&r>reps)){kg=k;reps=r;}});return {kg,reps};}
+function topSet(ex){
+  if(ex.timed){let kg=0,secs=0;(ex.sets||[]).forEach(st=>{const k=+st.kg||0,t=+st.secs||0;if(t>secs||(t===secs&&k>kg)){kg=k;secs=t;}});return {kg,secs,reps:0};}
+  let kg=0,reps=0;(ex.sets||[]).forEach(st=>{const k=+st.kg||0,r=+st.reps||0;if(k>kg||(k===kg&&r>reps)){kg=k;reps=r;}});return {kg,reps,secs:0};
+}
 function exerciseHistory(name){
   const out=[];state.sessions.forEach(s=>(s.exercises||[]).forEach(ex=>{if(ex.name===name&&ex.sets&&ex.sets.length)out.push({date:s.date,ex,top:topSet(ex)});}));
   return out; // newest first
@@ -319,7 +331,7 @@ function buildTips(){
   const names=new Set();recent.forEach(s=>(s.exercises||[]).forEach(e=>names.add(e.name)));
   names.forEach(n=>{
     const h=exerciseHistory(n).slice(0,3);
-    if(h.length===3&&h[0].top.kg>0&&h.every(x=>x.top.kg===h[0].top.kg)&&h[0].top.reps<=h[2].top.reps){
+    if(h.length===3&&!h[0].ex.timed&&h[0].top.kg>0&&h.every(x=>x.top.kg===h[0].top.kg)&&h[0].top.reps<=h[2].top.reps){
       tips.push({title:n+" has sat at "+h[0].top.kg+" kg for three sessions",text:"Aim for one more rep per set next time, or the smallest weight jump available. If it still stalls, swap in a close variation for a few weeks."});
     }
   });
@@ -378,7 +390,7 @@ function exerciseOptions(sel){
 }
 function lastTimeHint(name){
   const h=exerciseHistory(name)[0];if(!h)return "";
-  return `<small class="muted">Last time (${fmtDate(h.date)}): ${h.ex.sets.map(s=>esc((s.kg||0)+" kg × "+(s.reps||0))).join(", ")}</small>`;
+  return `<small class="muted">Last time (${fmtDate(h.date)}): ${h.ex.sets.map(s=>esc(fmtSet(s))).join(", ")}</small>`;
 }
 function renderLog(){
   const kg=+state.settings.weightKg||0,isW=draft.type==="weights";
@@ -400,10 +412,12 @@ function renderLog(){
         <label for="ex-${i}">Exercise ${i+1}<select id="ex-${i}" data-f="name">${exerciseOptions(custom?"__custom":ex.name)}</select></label>
         ${custom?`<div class="row"><label for="exn-${i}">Name<input id="exn-${i}" data-f="cname" value="${esc(ex.name)}" placeholder="Exercise name"></label>
           <label for="exg-${i}">Area<select id="exg-${i}" data-f="group">${GROUPS.map(g=>`<option${g===ex.group?" selected":""}>${esc(g)}</option>`).join("")}</select></label></div>`:""}
+        <label for="exm-${i}">Measure each set by<select id="exm-${i}" data-f="mode"><option value="reps"${ex.timed?"":" selected"}>Reps</option><option value="time"${ex.timed?" selected":""}>Time held (seconds)</option></select></label>
         ${ex.name&&!custom?lastTimeHint(ex.name):""}
         ${ex.sets.map((st,j)=>`<div class="set" data-j="${j}"><span>${j+1}</span>
-          <input id="kg-${i}-${j}" aria-label="Weight in kg, set ${j+1}" data-f="kg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="kg" value="${esc(st.kg)}">
-          <input id="rp-${i}-${j}" aria-label="Reps, set ${j+1}" data-f="reps" type="number" inputmode="numeric" min="0" placeholder="reps" value="${esc(st.reps)}">
+          <input id="kg-${i}-${j}" aria-label="Weight in kg, set ${j+1}" data-f="kg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="${ex.timed?"kg (optional)":"kg"}" value="${esc(st.kg)}">
+          ${ex.timed?`<input id="sc-${i}-${j}" aria-label="Seconds held, set ${j+1}" data-f="secs" type="number" inputmode="numeric" min="0" placeholder="seconds" value="${esc(st.secs)}">`
+            :`<input id="rp-${i}-${j}" aria-label="Reps, set ${j+1}" data-f="reps" type="number" inputmode="numeric" min="0" placeholder="reps" value="${esc(st.reps)}">`}
           <button class="btn small" data-a="del-set" aria-label="Remove set ${j+1}">×</button></div>`).join("")}
         <div class="btns"><button class="btn small" data-a="add-set">Add set</button><button class="btn small danger" data-a="del-ex">Remove exercise</button></div>
       </div>`;}).join("")}</div>
@@ -426,13 +440,13 @@ function healthButtons(kj){
     <small class="muted">Needs the one-off shortcut described under Setup. If the button does nothing, copy the figure and run the shortcut yourself.</small>`;
 }
 
-function sparkline(points){
+function sparkline(points,unit){
   if(points.length<2)return "";
   const W=300,H=70,p=8,vals=points.map(x=>x.kg),min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
   const xy=points.map((pt,i)=>[p+i*(W-2*p)/(points.length-1),H-p-((pt.kg-min)/span)*(H-2*p)]);
   const line=xy.map(c=>c[0].toFixed(1)+","+c[1].toFixed(1)).join(" ");
   const end=xy[xy.length-1];
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Top weight over time, from ${min} to ${max} kg">
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Best set over time, from ${min} to ${max} ${unit||"kg"}">
     <line x1="${p}" y1="${H-p}" x2="${W-p}" y2="${H-p}" stroke="var(--line)"/>
     <polygon points="${p},${H-p} ${line} ${W-p},${H-p}" fill="var(--accent-soft)"/>
     <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>
@@ -443,17 +457,18 @@ function renderHistory(){
   if(!names.includes(progressEx))progressEx=names[0]||"";
   let h="";
   if(names.length){
-    const hist=exerciseHistory(progressEx).slice().reverse(),pts=hist.map(x=>({kg:x.top.kg}));
-    const best=hist.reduce((a,x)=>x.top.kg>a.kg?x.top:a,{kg:0,reps:0}),latest=hist[hist.length-1];
+    const hist=exerciseHistory(progressEx).slice().reverse(),timed=hist.some(x=>x.ex.timed);
+    const val=x=>timed?(x.top.secs||0):x.top.kg,pts=hist.map(x=>({kg:val(x)}));
+    const best=hist.reduce((a,x)=>val(x)>val(a)?x:a,hist[0]).top,latest=hist[hist.length-1];
     h+=`<section class="card"><h2>Lift progress</h2><label for="p-ex">Exercise<select id="p-ex">${names.map(n=>`<option${n===progressEx?" selected":""}>${esc(n)}</option>`).join("")}</select></label>
-      ${sparkline(pts)}<div class="chips"><span class="chip">Latest top set · ${latest.top.kg} kg × ${latest.top.reps}</span><span class="chip">Best · ${best.kg} kg × ${best.reps}</span><span class="chip">${hist.length} session${hist.length===1?"":"s"}</span></div></section>`;
+      ${sparkline(pts,timed?"seconds":"kg")}<div class="chips"><span class="chip">Latest ${timed?"longest hold":"top set"} · ${esc(fmtTop(latest.top,timed))}</span><span class="chip">Best · ${esc(fmtTop(best,timed))}</span><span class="chip">${hist.length} session${hist.length===1?"":"s"}</span></div></section>`;
   }
   if(!state.sessions.length)h+=`<section class="card"><h2>History</h2><p class="muted">No sessions logged yet.</p><div class="btns"><a class="btn primary" href="#log">Log a session</a></div></section>`;
   state.sessions.forEach(s=>{
     const t=TYPES[s.type]||{label:s.type};
     h+=`<section class="card" data-id="${esc(s.id)}"><div class="sess-head"><h3>${esc(t.label)} · ${fmtDate(s.date)}</h3><b>${num(s.kj||0)} kJ</b></div>
       <p class="muted">${esc(s.minutes)} min · ${INTENSITY[s.intensity]||""} effort${s.weightKg?" · at "+esc(s.weightKg)+" kg":""}</p>
-      ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc((st.kg||0)+"×"+(st.reps||0))).join(", ")}</span>`).join("")}</div>`:""}
+      ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc(fmtSet(st))).join(", ")}</span>`).join("")}</div>`:""}
       ${s.notes?`<p class="muted">${esc(s.notes)}</p>`:""}
       <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${s.kj||0}">Add to Health</a>
       <button class="btn small" data-copy="${s.kj||0}">Copy kJ</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
@@ -501,9 +516,10 @@ view.addEventListener("change",e=>{
   if(exEl&&t.dataset.f==="name"){
     const ex=draft.exercises[+exEl.dataset.i];
     if(t.value==="__custom"){ex.custom=true;ex.name="";ex.group=GROUPS[0];}
-    else{ex.custom=false;ex.name=t.value;ex.group=(EX_BY_NAME[t.value]||{}).g||"";}
+    else{ex.custom=false;ex.name=t.value;ex.group=(EX_BY_NAME[t.value]||{}).g||"";ex.timed=!!(EX_BY_NAME[t.value]||{}).t;}
     writeCache();renderLog();return;
   }
+  if(exEl&&t.dataset.f==="mode"){draft.exercises[+exEl.dataset.i].timed=t.value==="time";writeCache();renderLog();return;}
   if(exEl&&t.dataset.f==="group"){draft.exercises[+exEl.dataset.i].group=t.value;writeCache();return;}
   if(t.id==="f-type"){draft.type=t.value;writeCache();renderLog();}
   if(t.id==="f-int"){draft.intensity=+t.value;updateEstimate();writeCache();}
@@ -520,12 +536,12 @@ view.addEventListener("click",async e=>{
   const exEl=t.closest(".ex");
   if(exEl&&t.dataset.a){
     const i=+exEl.dataset.i,ex=draft.exercises[i];
-    if(t.dataset.a==="add-set"){const l=ex.sets[ex.sets.length-1]||{kg:"",reps:""};ex.sets.push({kg:l.kg,reps:l.reps});}
+    if(t.dataset.a==="add-set"){const l=ex.sets[ex.sets.length-1]||{};ex.sets.push({kg:l.kg||"",reps:l.reps||"",secs:l.secs||""});}
     if(t.dataset.a==="del-set"){ex.sets.splice(+t.closest(".set").dataset.j,1);}
     if(t.dataset.a==="del-ex"){draft.exercises.splice(i,1);}
     writeCache();renderLog();return;
   }
-  if(t.id==="add-ex"){draft.exercises.push({name:"",group:"",custom:false,sets:[{kg:"",reps:""}]});writeCache();renderLog();return;}
+  if(t.id==="add-ex"){draft.exercises.push({name:"",group:"",custom:false,timed:false,sets:[{kg:"",reps:"",secs:""}]});writeCache();renderLog();return;}
   if(t.id==="save"){saveDraft();return;}
   if(t.dataset.a==="del-sess"){
     if(t.dataset.armed){await removeSession(t.closest("[data-id]").dataset.id);renderHistory();}
@@ -557,8 +573,9 @@ async function saveDraft(){
   let exercises=[];
   if(draft.type==="weights"){
     exercises=draft.exercises.map(ex=>({name:(ex.name||"").trim(),group:ex.group||(EX_BY_NAME[ex.name]||{}).g||"",
-      sets:ex.sets.filter(s=>+s.reps>0).map(s=>({kg:+s.kg||0,reps:+s.reps}))})).filter(ex=>ex.name&&ex.sets.length);
-    if(!exercises.length)return fail("Add at least one exercise with a set that has reps filled in.");
+      timed:!!ex.timed,
+      sets:ex.timed?ex.sets.filter(s=>+s.secs>0).map(s=>({kg:+s.kg||0,secs:+s.secs})):ex.sets.filter(s=>+s.reps>0).map(s=>({kg:+s.kg||0,reps:+s.reps}))})).filter(ex=>ex.name&&ex.sets.length);
+    if(!exercises.length)return fail("Add at least one exercise with a set that has reps or a time filled in.");
   }
   if(!state.settings.weightKg){state.settings.weightKg=kg;persistSettings();}
   const s={id:"s_"+Date.now(),ts:Date.now(),date:draft.date,type:draft.type,intensity:+draft.intensity,minutes:m,weightKg:kg,
