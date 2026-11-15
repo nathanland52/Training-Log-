@@ -89,6 +89,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .lifts i{font-style:normal;color:var(--ink)}
 ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px}
 svg.spark{width:100%;height:auto;display:block}
+svg.bars{width:100%;height:auto;display:block}
+svg.bars text{font-family:var(--body);font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums}
+svg.bars [data-wk]{cursor:pointer}
+svg.bars [data-wk]:focus-visible{outline:2px solid var(--accent)}
+details summary{font-size:14px;color:var(--muted);cursor:pointer}
+table.mini{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;margin-top:8px}
+table.mini th,table.mini td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--line)}
+table.mini th:first-child,table.mini td:first-child{text-align:left}
+table.mini th{color:var(--muted);font-weight:500}
 [hidden]{display:none !important}
 @media (max-width:360px){.tile b{font-size:24px}}
 </style>
@@ -181,6 +190,7 @@ const CACHE_KEY = "training-log-v1";
 const state = {settings:{weightKg:"",overdueDays:7,shortcutName:"Log Gym kJ"},sessions:[]};
 let cache = {mode:"local",unsynced:[]};
 let col = null, lastSaved = null, progressEx = "";
+let trendMetric = "kj", trendSel = null, histType = "all", histMonth = "all";
 let draft = newDraft();
 
 function newDraft(){return {date:today(),type:"weights",intensity:1,minutes:"",notes:"",exercises:[]};}
@@ -432,6 +442,46 @@ function buildTips(){
   return tips.slice(0,6);
 }
 
+/* ---------- Weekly trend ---------- */
+function isoDate(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function weekStart(dateStr){const d=new Date(dateStr+"T00:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return isoDate(d);} // Monday
+function weeklyData(n){
+  const out=[],d=new Date(weekStart(today())+"T00:00");d.setDate(d.getDate()-7*(n-1));
+  for(let i=0;i<n;i++){out.push({start:isoDate(d),sessions:0,minutes:0,kj:0});d.setDate(d.getDate()+7);}
+  const idx=Object.fromEntries(out.map((w,i)=>[w.start,i]));
+  state.sessions.forEach(x=>{const i=idx[weekStart(x.date)];if(i===undefined)return;out[i].sessions++;out[i].minutes+=+x.minutes||0;out[i].kj+=+x.kj||0;});
+  return out;
+}
+const TREND={kj:{label:"kJ burned",unit:"kJ"},minutes:{label:"Minutes",unit:"min"},sessions:{label:"Sessions",unit:"sessions"}};
+function shortDate(s){return new Date(s+"T00:00").toLocaleDateString("en-AU",{day:"numeric",month:"short"});}
+function trendCard(){
+  const wks=weeklyData(12),m=trendMetric,vals=wks.map(w=>w[m]),max=Math.max(...vals,1);
+  const sel=(trendSel===null||trendSel>=wks.length)?wks.length-1:trendSel,cur=wks[sel];
+  const W=300,H=132,L=4,R=4,T=16,B=18,base=H-B,slot=(W-L-R)/wks.length,bw=slot-2;
+  const y=v=>base-(v/max)*(base-T);
+  let bars="";
+  wks.forEach((w,i)=>{
+    const x=L+i*slot+1,v=w[m],top=y(v),h=base-top,r=Math.min(4,h);
+    const label=(i===wks.length-1?"This week":"Week of "+shortDate(w.start))+": "+num(v)+" "+TREND[m].unit;
+    bars+=`<g data-wk="${i}" role="button" tabindex="0" aria-label="${esc(label)}"><rect x="${(x-1).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${base}" fill="transparent"/>`
+      +(v>0?`<path d="M${x.toFixed(1)},${base} V${(top+r).toFixed(1)} Q${x.toFixed(1)},${top.toFixed(1)} ${(x+r).toFixed(1)},${top.toFixed(1)} H${(x+bw-r).toFixed(1)} Q${(x+bw).toFixed(1)},${top.toFixed(1)} ${(x+bw).toFixed(1)},${(top+r).toFixed(1)} V${base} Z" fill="var(--accent)" opacity="${i===sel?1:.45}"/>`
+        :`<rect x="${x.toFixed(1)}" y="${base-1.5}" width="${bw.toFixed(1)}" height="1.5" fill="var(--line)"/>`)+`</g>`;
+  });
+  const total=wks.reduce((a,w)=>a+w[m],0),active=wks.filter(w=>w.sessions>0).length;
+  return `<section class="card"><h2>Weekly trend</h2>
+    <div class="btns">${Object.keys(TREND).map(k=>`<button class="btn small${k===m?" primary":""}" data-metric="${k}" aria-pressed="${k===m}">${TREND[k].label}</button>`).join("")}</div>
+    <svg class="bars" viewBox="0 0 ${W} ${H}" role="group" aria-label="${esc(TREND[m].label)} per week, last 12 weeks">
+      <line x1="${L}" y1="${T}" x2="${W-R}" y2="${T}" stroke="var(--line)" stroke-dasharray="2 3"/>
+      <line x1="${L}" y1="${base}" x2="${W-R}" y2="${base}" stroke="var(--line)"/>
+      <text x="${L}" y="${T-5}">${num(max)} ${TREND[m].unit}</text>
+      ${bars}
+      <text x="${L}" y="${H-5}">${shortDate(wks[0].start)}</text><text x="${W-R}" y="${H-5}" text-anchor="end">This week</text>
+    </svg>
+    <p><b>${sel===wks.length-1?"This week":"Week of "+shortDate(cur.start)}:</b> ${cur.sessions} session${cur.sessions===1?"":"s"} · ${num(cur.minutes)} min · ${num(cur.kj)} kJ</p>
+    <p class="muted">Tap a bar to see that week. Weeks run Monday to Sunday. Over these 12 weeks: ${num(total)} ${TREND[m].unit} across ${active} active week${active===1?"":"s"}.</p>
+    <details><summary>Show as table</summary><table class="mini"><thead><tr><th>Week of</th><th>Sessions</th><th>Min</th><th>kJ</th></tr></thead><tbody>
+      ${wks.slice().reverse().map(w=>`<tr><td>${shortDate(w.start)}</td><td>${w.sessions}</td><td>${num(w.minutes)}</td><td>${num(w.kj)}</td></tr>`).join("")}</tbody></table></details></section>`;
+}
 /* ---------- Views ---------- */
 const view=document.getElementById("view");
 function route(){
@@ -458,6 +508,7 @@ function renderToday(){
       h+=`<section class="card"><h2>Back up your sessions</h2><p>${bk?"Your last backup was "+daysSince(bk)+" days ago.":"You have "+state.sessions.length+" sessions stored on this phone and no backup yet."}</p>
         <div class="btns"><a class="btn primary" href="#setup">Go to Backup</a></div></section>`;
     }
+    h+=trendCard();
     h+=`<section class="card"><h2>Due for attention</h2>`;
     h+=due.length?`<ul class="list">${due.map(d=>`<li class="item ${d.level}"><h3>${esc(d.title)}</h3><small>${esc(d.text)}</small></li>`).join("")}</ul>`
       :`<p class="muted">Nothing overdue. Every area has been trained in the last ${limit} days.</p>`;
@@ -543,7 +594,7 @@ function healthButtons(kj){
 function sparkline(points,unit){
   if(points.length<2)return "";
   const W=300,H=70,p=8,vals=points.map(x=>x.kg),min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
-  const xy=points.map((pt,i)=>[p+i*(W-2*p)/(points.length-1),H-p-((pt.kg-min)/span)*(H-2*p)]);
+  const xy=points.map((pt,i)=>[p+i*(W-2*p)/(points.length-1),max===min?H/2:H-p-((pt.kg-min)/span)*(H-2*p)]);
   const line=xy.map(c=>c[0].toFixed(1)+","+c[1].toFixed(1)).join(" ");
   const end=xy[xy.length-1];
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Trend over time, from ${min} to ${max} ${unit||"kg"}">
@@ -564,7 +615,21 @@ function renderHistory(){
       ${sparkline(pts,timed?"seconds":"kg")}<div class="chips"><span class="chip">Latest ${timed?"longest hold":"top set"} · ${esc(fmtTop(latest.top,timed))}</span><span class="chip">Best · ${esc(fmtTop(best,timed))}</span><span class="chip">${hist.length} session${hist.length===1?"":"s"}</span></div></section>`;
   }
   if(!state.sessions.length)h+=`<section class="card"><h2>History</h2><p class="muted">No sessions logged yet.</p><div class="btns"><a class="btn primary" href="#log">Log a session</a></div></section>`;
-  state.sessions.forEach(s=>{
+  const monthKey=x=>x.date.slice(0,7),monthLabel=k=>new Date(k+"-01T00:00").toLocaleDateString("en-AU",{month:"long",year:"numeric"});
+  const typesUsed=Object.keys(TYPES).filter(k=>state.sessions.some(x=>x.type===k));
+  const monthsUsed=[...new Set(state.sessions.map(monthKey))].sort().reverse();
+  if(histType!=="all"&&!typesUsed.includes(histType))histType="all";
+  if(histMonth!=="all"&&!monthsUsed.includes(histMonth))histMonth="all";
+  const shown=state.sessions.filter(x=>(histType==="all"||x.type===histType)&&(histMonth==="all"||monthKey(x)===histMonth));
+  if(state.sessions.length){
+    const kjSum=shown.reduce((a,x)=>a+(+x.kj||0),0),minSum=shown.reduce((a,x)=>a+(+x.minutes||0),0);
+    h+=`<section class="card"><h2>Sessions</h2>
+      <div class="row"><label for="h-type">Activity<select id="h-type"><option value="all">All activities</option>${typesUsed.map(k=>`<option value="${k}"${k===histType?" selected":""}>${esc(TYPES[k].label)}</option>`).join("")}</select></label>
+      <label for="h-month">Month<select id="h-month"><option value="all">All months</option>${monthsUsed.map(k=>`<option value="${k}"${k===histMonth?" selected":""}>${esc(monthLabel(k))}</option>`).join("")}</select></label></div>
+      <p class="muted">Showing ${shown.length} of ${state.sessions.length} session${state.sessions.length===1?"":"s"} · ${num(minSum)} min · ${num(kjSum)} kJ</p>
+      ${shown.length?"":`<p>No sessions match these filters.</p>`}</section>`;
+  }
+  shown.forEach(s=>{
     const t=TYPES[s.type]||{label:s.type};
     h+=`<section class="card" data-id="${esc(s.id)}"><div class="sess-head"><h3>${esc(t.label)} · ${fmtDate(s.date)}</h3><b>${num(s.kj||0)} kJ</b></div>
       <p class="muted">${esc(s.minutes)} min · ${INTENSITY[s.intensity]||""} effort${s.weightKg?" · at "+esc(s.weightKg)+" kg":""} · ${num(activeKj(s))} kJ active</p>
@@ -634,10 +699,19 @@ view.addEventListener("change",e=>{
   if(t.id==="f-int"){draft.intensity=+t.value;updateEstimate();writeCache();}
   if(t.id==="f-date"){draft.date=t.value;writeCache();}
   if(t.id==="p-ex"){progressEx=t.value;renderHistory();}
+  if(t.id==="h-type"){histType=t.value;renderHistory();}
+  if(t.id==="h-month"){histMonth=t.value;renderHistory();}
   if(t.id==="b-file"&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>restoreBackup(String(r.result),document.getElementById("b-msg"));r.readAsText(t.files[0]);}
 });
+view.addEventListener("keydown",e=>{
+  const wk=e.target.closest&&e.target.closest("[data-wk]");
+  if(wk&&(e.key==="Enter"||e.key===" ")){e.preventDefault();trendSel=+wk.dataset.wk;renderToday();}
+});
 view.addEventListener("click",async e=>{
+  const wk=e.target.closest("[data-wk]");
+  if(wk){trendSel=+wk.dataset.wk;renderToday();return;}
   const t=e.target.closest("button,a");if(!t)return;
+  if(t.dataset.metric){trendMetric=t.dataset.metric;renderToday();return;}
   if(t.dataset.claude){
     const text=claudeText(t.dataset.claude);
     if(!text){t.textContent="Nothing to copy yet";return;}
