@@ -79,6 +79,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .set{display:grid;grid-template-columns:28px 1fr 1fr 36px;gap:8px;align-items:center}
 .set span{font-family:var(--display);font-size:18px;color:var(--muted)}
 .set button{padding:8px 0}
+.set.timed{grid-template-columns:28px 1fr 1fr 58px 36px}
 .err{color:var(--crit);font-size:14px}
 .note{background:var(--accent-soft);border-radius:10px;padding:12px;font-size:14px}
 .big{font-family:var(--display);font-size:36px;line-height:1;font-variant-numeric:tabular-nums}
@@ -197,6 +198,63 @@ function num(n){return Math.round(n).toLocaleString("en-AU");}
 function calcKj(type,intensity,minutes,kg){const t=TYPES[type]||TYPES.weights;return Math.round(t.met[intensity]*kg*(minutes/60)*4.184);}
 // Active energy leaves out what the body burns at rest anyway (1 MET), which is what Apple Health's Active Energy expects.
 function activeKj(x){const t=TYPES[x.type]||TYPES.weights,met=t.met[x.intensity]||t.met[1];return Math.round((met-1)*(+x.weightKg||0)*((+x.minutes||0)/60)*4.184);}
+// Exercises you typed in yourself, taken from your history so they appear in the list next time.
+function customExercises(){
+  const seen={},out=[];
+  state.sessions.forEach(s=>(s.exercises||[]).forEach(ex=>{
+    if(!ex.name||EX_BY_NAME[ex.name]||seen[ex.name])return;
+    seen[ex.name]=1;out.push({n:ex.name,g:ex.group||"",t:ex.timed?1:0});
+  }));
+  return out.sort((a,b)=>a.n<b.n?-1:1);
+}
+function libFor(name){return EX_BY_NAME[name]||customExercises().find(e=>e.n===name)||null;}
+// Match a typed name to an existing one regardless of capitals, so "Wall Sit" and "Wall sit" share one history.
+function canonicalName(name){
+  const k=String(name||"").trim().toLowerCase();
+  const hit=EXERCISES.find(e=>e.n.toLowerCase()===k)||customExercises().find(e=>e.n.toLowerCase()===k);
+  return hit?hit.n:String(name||"").trim();
+}
+function normaliseNames(){
+  let changed=false;
+  state.sessions.forEach(s=>(s.exercises||[]).forEach(ex=>{
+    const k=String(ex.name||"").trim().toLowerCase(),hit=EXERCISES.find(e=>e.n.toLowerCase()===k);
+    if(hit&&ex.name!==hit.n){ex.name=hit.n;changed=true;}
+  }));
+  return changed;
+}
+function draftFromSession(x,asEdit){
+  const d=newDraft();d.type=x.type;d.intensity=x.intensity;d.minutes=String(x.minutes);
+  d.exercises=(x.exercises||[]).map(ex=>({name:ex.name,group:ex.group||"",custom:false,timed:!!ex.timed,
+    sets:ex.sets.map(st=>({kg:st.kg?String(st.kg):"",reps:st.reps?String(st.reps):"",secs:st.secs?String(st.secs):""}))}));
+  if(asEdit){d.date=x.date;d.notes=x.notes||"";d.editId=x.id;}
+  return d;
+}
+function weightSeries(){
+  const log=(state.settings.weightLog||[]).slice();
+  if(!log.length){const by={};state.sessions.forEach(x=>{if(x.weightKg)by[x.date]=+x.weightKg;});Object.keys(by).forEach(d=>log.push({d,kg:by[d]}));}
+  return log.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
+}
+function logWeight(kg){
+  const log=weightSeries().filter(x=>x.d!==today());log.push({d:today(),kg});
+  state.settings.weightLog=log;state.settings.weightKg=kg;
+}
+// Stopwatch for timed sets. Uses the clock, so it keeps counting if the phone locks.
+let timer=null;
+function stopTimer(keep){
+  if(!timer)return;clearInterval(timer.tick);
+  const ex=draft.exercises[timer.i];
+  if(keep&&ex&&ex.sets[timer.j]){ex.sets[timer.j].secs=String(Math.max(1,Math.round((Date.now()-timer.start)/1000)));writeCache();}
+  timer=null;
+}
+function startTimer(i,j){
+  stopTimer(true);timer={i,j,start:Date.now()};
+  timer.tick=setInterval(()=>{
+    if(!timer)return;
+    const ex=draft.exercises[timer.i];if(!ex||!ex.sets[timer.j]){stopTimer(false);return;}
+    const v=Math.round((Date.now()-timer.start)/1000);ex.sets[timer.j].secs=String(v);
+    const el=document.getElementById("sc-"+timer.i+"-"+timer.j);if(el)el.value=v;
+  },250);
+}
 function setStatus(t){document.getElementById("status").textContent=t;}
 
 function readCache(){
@@ -214,7 +272,7 @@ function sortSessions(){state.sessions.sort((a,b)=>a.date<b.date?1:a.date>b.date
 function timeout(ms){return new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms));}
 
 async function initStore(){
-  readCache();sortSessions();route();
+  readCache();if(normaliseNames())writeCache();sortSessions();route();
   try{
     if(window.claude&&typeof window.claude.use==="function"){
       const [db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")]);
@@ -395,6 +453,11 @@ function renderToday(){
     h+=`<section class="card"><h2>Start here</h2><p>Log your first session and this page will start telling you what is overdue and what to change.</p>
       <div class="btns"><a class="btn primary" href="#log">Log a session</a>${state.settings.weightKg?"":`<a class="btn" href="#setup">Enter your body weight</a>`}</div></section>`;
   }else{
+    const bk=state.settings.lastBackup;
+    if(!col&&state.sessions.length>=3&&(!bk||daysSince(bk)>14)){
+      h+=`<section class="card"><h2>Back up your sessions</h2><p>${bk?"Your last backup was "+daysSince(bk)+" days ago.":"You have "+state.sessions.length+" sessions stored on this phone and no backup yet."}</p>
+        <div class="btns"><a class="btn primary" href="#setup">Go to Backup</a></div></section>`;
+    }
     h+=`<section class="card"><h2>Due for attention</h2>`;
     h+=due.length?`<ul class="list">${due.map(d=>`<li class="item ${d.level}"><h3>${esc(d.title)}</h3><small>${esc(d.text)}</small></li>`).join("")}</ul>`
       :`<p class="muted">Nothing overdue. Every area has been trained in the last ${limit} days.</p>`;
@@ -412,7 +475,10 @@ function renderToday(){
 
 function exerciseOptions(sel){
   let h=`<option value="">Choose exercise…</option>`;
-  GROUPS.forEach(g=>{h+=`<optgroup label="${esc(g)}">`+EXERCISES.filter(e=>e.g===g).map(e=>`<option${e.n===sel?" selected":""}>${esc(e.n)}</option>`).join("")+`</optgroup>`;});
+  const own=customExercises();
+  GROUPS.forEach(g=>{h+=`<optgroup label="${esc(g)}">`+EXERCISES.filter(e=>e.g===g).concat(own.filter(e=>e.g===g)).map(e=>`<option${e.n===sel?" selected":""}>${esc(e.n)}</option>`).join("")+`</optgroup>`;});
+  const loose=own.filter(e=>!GROUPS.includes(e.g));
+  if(loose.length)h+=`<optgroup label="Your exercises">`+loose.map(e=>`<option${e.n===sel?" selected":""}>${esc(e.n)}</option>`).join("")+`</optgroup>`;
   h+=`<option value="__custom"${sel==="__custom"?" selected":""}>Other (type your own)…</option>`;
   return h;
 }
@@ -426,13 +492,17 @@ function renderLog(){
   if(lastSaved){
     h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">total, about ${num(lastSaved.kj/4.184)} kcal</span></div><p class="muted">${num(activeKj(lastSaved))} kJ of that is active energy, above what you burn at rest. That is the figure sent to Apple Health.</p>${healthButtons(activeKj(lastSaved))}<div class="btns"><button class="btn" data-claude="${esc(lastSaved.id)}">Copy session for Claude</button></div></section>`;
   }
-  h+=`<section class="card"><h2>Log a session</h2>
+  const editing=!!draft.editId;
+  const prev=editing?null:state.sessions.find(x=>x.type===draft.type);
+  const canRepeat=prev&&(isW?draft.exercises.length===0:!draft.minutes);
+  h+=`<section class="card"><h2>${editing?"Edit session":"Log a session"}</h2>
     <div class="row"><label for="f-date">Date<input id="f-date" type="date" value="${esc(draft.date)}" max="${today()}"></label>
     <label for="f-type">Activity<select id="f-type">${Object.keys(TYPES).map(k=>`<option value="${k}"${k===draft.type?" selected":""}>${esc(TYPES[k].label)}</option>`).join("")}</select></label></div>
     <div class="row"><label for="f-min">Minutes<input id="f-min" type="number" inputmode="numeric" min="1" value="${esc(draft.minutes)}" placeholder="60"></label>
     <label for="f-int">Effort<select id="f-int">${INTENSITY.map((n,i)=>`<option value="${i}"${i===+draft.intensity?" selected":""}>${n}</option>`).join("")}</select></label></div>
     ${kg?"":`<label for="f-kg">Your body weight (kg), needed for the kJ figure<input id="f-kg" type="number" inputmode="decimal" min="30" placeholder="85"></label>`}
-    <p class="muted" id="f-est"></p>`;
+    <p class="muted" id="f-est"></p>
+    ${canRepeat?`<button class="btn" id="repeat">Repeat last ${esc((TYPES[prev.type]||{}).label||"")} session (${fmtDate(prev.date)})</button>`:""}`;
   if(isW){
     h+=`<div id="ex-list" class="list">${draft.exercises.map((ex,i)=>{
       const custom=ex.custom;
@@ -442,9 +512,10 @@ function renderLog(){
           <label for="exg-${i}">Area<select id="exg-${i}" data-f="group">${GROUPS.map(g=>`<option${g===ex.group?" selected":""}>${esc(g)}</option>`).join("")}</select></label></div>`:""}
         <label for="exm-${i}">Measure each set by<select id="exm-${i}" data-f="mode"><option value="reps"${ex.timed?"":" selected"}>Reps</option><option value="time"${ex.timed?" selected":""}>Time held (seconds)</option></select></label>
         ${ex.name&&!custom?lastTimeHint(ex.name):""}
-        ${ex.sets.map((st,j)=>`<div class="set" data-j="${j}"><span>${j+1}</span>
-          <input id="kg-${i}-${j}" aria-label="Weight in kg, set ${j+1}" data-f="kg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="${ex.timed?"kg (optional)":"kg"}" value="${esc(st.kg)}">
-          ${ex.timed?`<input id="sc-${i}-${j}" aria-label="Seconds held, set ${j+1}" data-f="secs" type="number" inputmode="numeric" min="0" placeholder="seconds" value="${esc(st.secs)}">`
+        ${ex.sets.map((st,j)=>`<div class="set${ex.timed?" timed":""}" data-j="${j}"><span>${j+1}</span>
+          <input id="kg-${i}-${j}" aria-label="Weight in kg, set ${j+1}" data-f="kg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="kg" value="${esc(st.kg)}">
+          ${ex.timed?`<input id="sc-${i}-${j}" aria-label="Seconds held, set ${j+1}" data-f="secs" type="number" inputmode="numeric" min="0" placeholder="secs" value="${esc(st.secs)}">
+            <button class="btn small${timer&&timer.i===i&&timer.j===j?" primary":""}" data-a="timer" aria-label="Stopwatch for set ${j+1}">${timer&&timer.i===i&&timer.j===j?"Stop":"Start"}</button>`
             :`<input id="rp-${i}-${j}" aria-label="Reps, set ${j+1}" data-f="reps" type="number" inputmode="numeric" min="0" placeholder="reps" value="${esc(st.reps)}">`}
           <button class="btn small" data-a="del-set" aria-label="Remove set ${j+1}">×</button></div>`).join("")}
         <div class="btns"><button class="btn small" data-a="add-set">Add set</button><button class="btn small danger" data-a="del-ex">Remove exercise</button></div>
@@ -453,12 +524,13 @@ function renderLog(){
   }
   h+=`<label for="f-notes">Notes (optional)<textarea id="f-notes" rows="2">${esc(draft.notes)}</textarea></label>
     <p class="err" id="f-err" hidden></p>
-    <button class="btn primary" id="save">Save session</button></section>`;
+    <div class="btns"><button class="btn primary" id="save">${editing?"Save changes":"Save session"}</button>${editing?`<button class="btn" id="cancel-edit">Cancel edit</button>`:""}</div></section>`;
   view.innerHTML=h;updateEstimate();
 }
 function updateEstimate(){
   const el=document.getElementById("f-est");if(!el)return;
-  const kgEl=document.getElementById("f-kg");const kg=+state.settings.weightKg||(kgEl?+kgEl.value:0);const m=+draft.minutes;
+  const kgEl=document.getElementById("f-kg");const old=draft.editId&&state.sessions.find(x=>x.id===draft.editId);
+  const kg=(old&&+old.weightKg)||+state.settings.weightKg||(kgEl?+kgEl.value:0);const m=+draft.minutes;
   el.textContent=(kg>0&&m>0)?"Estimated burn: "+num(calcKj(draft.type,+draft.intensity,m,kg))+" kJ":"";
 }
 function healthButtons(kj){
@@ -474,7 +546,7 @@ function sparkline(points,unit){
   const xy=points.map((pt,i)=>[p+i*(W-2*p)/(points.length-1),H-p-((pt.kg-min)/span)*(H-2*p)]);
   const line=xy.map(c=>c[0].toFixed(1)+","+c[1].toFixed(1)).join(" ");
   const end=xy[xy.length-1];
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Best set over time, from ${min} to ${max} ${unit||"kg"}">
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Trend over time, from ${min} to ${max} ${unit||"kg"}">
     <line x1="${p}" y1="${H-p}" x2="${W-p}" y2="${H-p}" stroke="var(--line)"/>
     <polygon points="${p},${H-p} ${line} ${W-p},${H-p}" fill="var(--accent-soft)"/>
     <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>
@@ -499,17 +571,25 @@ function renderHistory(){
       ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc(fmtSet(st))).join(", ")}</span>`).join("")}</div>`:""}
       ${s.notes?`<p class="muted">${esc(s.notes)}</p>`:""}
       <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${activeKj(s)}">Add to Health</a>
-      <button class="btn small" data-copy="${activeKj(s)}">Copy active kJ</button><button class="btn small" data-claude="${esc(s.id)}">Copy for Claude</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
+      <button class="btn small" data-copy="${activeKj(s)}">Copy active kJ</button><button class="btn small" data-claude="${esc(s.id)}">Copy for Claude</button><button class="btn small" data-a="edit-sess">Edit</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
   });
   view.innerHTML=h;
 }
 function renderSetup(){
-  const s=state.settings;
+  const s=state.settings,ws=weightSeries();
+  let wcard="";
+  if(ws.length){
+    const first=ws[0],lastW=ws[ws.length-1],diff=Math.round((lastW.kg-first.kg)*10)/10;
+    wcard=`<section class="card"><h2>Body weight history</h2>${sparkline(ws.map(x=>({kg:x.kg})),"kg")}
+      <div class="chips"><span class="chip">Latest · ${lastW.kg} kg (${fmtDate(lastW.d)})</span>${ws.length>1?`<span class="chip">${diff>0?"+":""}${diff} kg since ${fmtDate(first.d)}</span>`:""}<span class="chip">${ws.length} weigh-in${ws.length===1?"":"s"}</span></div>
+      <p class="muted">To add a weigh-in, enter your new weight under Your details and save. New sessions use the latest weight. Past sessions keep the weight they were logged at.</p></section>`;
+  }
   view.innerHTML=`<section class="card"><h2>Your details</h2>
     <div class="row"><label for="s-kg">Body weight (kg)<input id="s-kg" type="number" inputmode="decimal" min="30" value="${esc(s.weightKg)}" placeholder="85"></label>
     <label for="s-days">Flag an area after (days)<input id="s-days" type="number" inputmode="numeric" min="2" max="30" value="${esc(s.overdueDays)}"></label></div>
     <label for="s-short">Name of your Health shortcut<input id="s-short" value="${esc(s.shortcutName)}"></label>
     <div class="btns"><button class="btn primary" id="s-save">Save details</button></div><p class="muted" id="s-msg"></p></section>
+    ${wcard}
     <section class="card"><h2>Backup</h2>
     <p>Your sessions are stored on this phone only. Save a backup file now and then, and keep it in Files or iCloud Drive.</p>
     <div class="btns"><button class="btn primary" id="b-save">Save backup file</button><button class="btn" id="b-copy">Copy backup as text</button></div>
@@ -545,12 +625,12 @@ view.addEventListener("change",e=>{
   if(exEl&&t.dataset.f==="name"){
     const ex=draft.exercises[+exEl.dataset.i];
     if(t.value==="__custom"){ex.custom=true;ex.name="";ex.group=GROUPS[0];}
-    else{ex.custom=false;ex.name=t.value;ex.group=(EX_BY_NAME[t.value]||{}).g||"";ex.timed=!!(EX_BY_NAME[t.value]||{}).t;}
+    else{const lib=libFor(t.value)||{};ex.custom=false;ex.name=t.value;ex.group=lib.g||"";ex.timed=!!lib.t;}
     writeCache();renderLog();return;
   }
-  if(exEl&&t.dataset.f==="mode"){draft.exercises[+exEl.dataset.i].timed=t.value==="time";writeCache();renderLog();return;}
+  if(exEl&&t.dataset.f==="mode"){stopTimer(true);draft.exercises[+exEl.dataset.i].timed=t.value==="time";writeCache();renderLog();return;}
   if(exEl&&t.dataset.f==="group"){draft.exercises[+exEl.dataset.i].group=t.value;writeCache();return;}
-  if(t.id==="f-type"){draft.type=t.value;writeCache();renderLog();}
+  if(t.id==="f-type"){stopTimer(true);draft.type=t.value;writeCache();renderLog();}
   if(t.id==="f-int"){draft.intensity=+t.value;updateEstimate();writeCache();}
   if(t.id==="f-date"){draft.date=t.value;writeCache();}
   if(t.id==="p-ex"){progressEx=t.value;renderHistory();}
@@ -577,6 +657,12 @@ view.addEventListener("click",async e=>{
   const exEl=t.closest(".ex");
   if(exEl&&t.dataset.a){
     const i=+exEl.dataset.i,ex=draft.exercises[i];
+    if(t.dataset.a==="timer"){
+      const j=+t.closest(".set").dataset.j;
+      if(timer&&timer.i===i&&timer.j===j)stopTimer(true);else startTimer(i,j);
+      renderLog();return;
+    }
+    if(t.dataset.a==="del-set"||t.dataset.a==="del-ex")stopTimer(true);
     if(t.dataset.a==="add-set"){const l=ex.sets[ex.sets.length-1]||{};ex.sets.push({kg:l.kg||"",reps:l.reps||"",secs:l.secs||""});}
     if(t.dataset.a==="del-set"){ex.sets.splice(+t.closest(".set").dataset.j,1);}
     if(t.dataset.a==="del-ex"){draft.exercises.splice(i,1);}
@@ -584,6 +670,17 @@ view.addEventListener("click",async e=>{
   }
   if(t.id==="add-ex"){draft.exercises.push({name:"",group:"",custom:false,timed:false,sets:[{kg:"",reps:"",secs:""}]});writeCache();renderLog();return;}
   if(t.id==="save"){saveDraft();return;}
+  if(t.id==="repeat"){
+    const prev=state.sessions.find(x=>x.type===draft.type);
+    if(prev){stopTimer(false);const d=draftFromSession(prev,false);d.date=draft.date;draft=d;writeCache();renderLog();}
+    return;
+  }
+  if(t.id==="cancel-edit"){stopTimer(false);draft=newDraft();writeCache();renderLog();return;}
+  if(t.dataset.a==="edit-sess"){
+    const x=state.sessions.find(y=>y.id===t.closest("[data-id]").dataset.id);
+    if(x){stopTimer(false);draft=draftFromSession(x,true);lastSaved=null;writeCache();if(location.hash==="#log")renderLog();else location.hash="#log";}
+    return;
+  }
   if(t.dataset.a==="del-sess"){
     if(t.dataset.armed){await removeSession(t.closest("[data-id]").dataset.id);renderHistory();}
     else{t.dataset.armed="1";t.textContent="Tap again to delete";}
@@ -599,29 +696,34 @@ view.addEventListener("click",async e=>{
   if(t.id==="s-save"){
     const kg=+document.getElementById("s-kg").value,days=+document.getElementById("s-days").value,msg=document.getElementById("s-msg");
     if(!(kg>=30&&kg<=250)){msg.textContent="Enter your body weight in kg, between 30 and 250.";return;}
-    state.settings.weightKg=kg;state.settings.overdueDays=(days>=2&&days<=30)?days:7;
+    logWeight(kg);state.settings.overdueDays=(days>=2&&days<=30)?days:7;
     state.settings.shortcutName=document.getElementById("s-short").value.trim()||"Log Gym kJ";
     await persistSettings();renderSetup();document.getElementById("s-msg").textContent="Saved.";
   }
 });
 async function saveDraft(){
+  stopTimer(true);
   const err=document.getElementById("f-err"),fail=m=>{err.textContent=m;err.hidden=false;};
-  const kgEl=document.getElementById("f-kg");let kg=+state.settings.weightKg||0;
+  const existing=draft.editId?state.sessions.find(x=>x.id===draft.editId):null;
+  const kgEl=document.getElementById("f-kg");let kg=(existing&&+existing.weightKg)||+state.settings.weightKg||0;
   if(!kg&&kgEl){kg=+kgEl.value;}
   if(!(kg>=30&&kg<=250))return fail("Enter your body weight in kg so the kJ figure can be worked out.");
   const m=+draft.minutes;if(!(m>0&&m<=600))return fail("Enter how many minutes the session took.");
   if(!draft.date)return fail("Choose the date of the session.");
   let exercises=[];
   if(draft.type==="weights"){
-    exercises=draft.exercises.map(ex=>({name:(ex.name||"").trim(),group:ex.group||(EX_BY_NAME[ex.name]||{}).g||"",
+    exercises=draft.exercises.map(ex=>{const name=canonicalName(ex.name);return {name,group:ex.group||(libFor(name)||{}).g||"",
       timed:!!ex.timed,
-      sets:ex.timed?ex.sets.filter(s=>+s.secs>0).map(s=>({kg:+s.kg||0,secs:+s.secs})):ex.sets.filter(s=>+s.reps>0).map(s=>({kg:+s.kg||0,reps:+s.reps}))})).filter(ex=>ex.name&&ex.sets.length);
+      sets:ex.timed?ex.sets.filter(s=>+s.secs>0).map(s=>({kg:+s.kg||0,secs:+s.secs})):ex.sets.filter(s=>+s.reps>0).map(s=>({kg:+s.kg||0,reps:+s.reps}))};}).filter(ex=>ex.name&&ex.sets.length);
     if(!exercises.length)return fail("Add at least one exercise with a set that has reps or a time filled in.");
   }
-  if(!state.settings.weightKg){state.settings.weightKg=kg;persistSettings();}
-  const s={id:"s_"+Date.now(),ts:Date.now(),date:draft.date,type:draft.type,intensity:+draft.intensity,minutes:m,weightKg:kg,
+  if(!state.settings.weightKg){logWeight(kg);persistSettings();}
+  const fields={date:draft.date,type:draft.type,intensity:+draft.intensity,minutes:m,weightKg:kg,
     kj:calcKj(draft.type,+draft.intensity,m,kg),notes:(draft.notes||"").trim(),exercises};
-  state.sessions.push(s);sortSessions();lastSaved=s;draft=newDraft();
+  let s;
+  if(existing){s=Object.assign(existing,fields);}
+  else{s=Object.assign({id:"s_"+Date.now(),ts:Date.now()},fields);state.sessions.push(s);}
+  sortSessions();lastSaved=s;draft=newDraft();
   await persistSession(s);
   if(!col)setStatus(backupStatus());
   renderLog();window.scrollTo(0,0);
