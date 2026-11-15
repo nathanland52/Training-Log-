@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Log</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Training">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eceff4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10141c" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: one phone-width column. Sticky tabs on top, summary first, detail below. */
+  --bg:#eceff4; --surface:#ffffff; --ink:#151a25; --muted:#5b6475; --line:#d3d9e3;
+  --accent:#2449c9; --accent-ink:#ffffff; --accent-soft:#e3e9fb;
+  --warn:#a85408; --warn-bg:#fdefd9; --good:#1c7448; --good-bg:#def2e6; --crit:#b3261e; --crit-bg:#fbe4e2;
+  --display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#10141c; --surface:#1a202c; --ink:#eef1f6; --muted:#9aa4b6; --line:#2e3646;
+    --accent:#7d9bff; --accent-ink:#0d1220; --accent-soft:#222c4a;
+    --warn:#f0b057; --warn-bg:#3a2a12; --good:#6fd39c; --good-bg:#15301f; --crit:#ff8a80; --crit-bg:#3b1a18;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#10141c; --surface:#1a202c; --ink:#eef1f6; --muted:#9aa4b6; --line:#2e3646;
+  --accent:#7d9bff; --accent-ink:#0d1220; --accent-soft:#222c4a;
+  --warn:#f0b057; --warn-bg:#3a2a12; --good:#6fd39c; --good-bg:#15301f; --crit:#ff8a80; --crit-bg:#3b1a18;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px 48px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:16px 0 8px}
+h1{font-family:var(--display);font-size:30px;line-height:1;margin:0;letter-spacing:.01em;text-transform:uppercase}
+h2{font-family:var(--display);font-size:21px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.02em;text-wrap:balance}
+h3{font-size:16px;font-weight:600;margin:0}
+p{margin:0}
+.status{font-size:13px;color:var(--muted);text-align:right}
+nav{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}
+nav a{display:block;text-align:center;padding:10px 4px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:600;font-size:15px}
+nav a[aria-current="page"]{background:var(--ink);color:var(--bg)}
+main{display:flex;flex-direction:column;gap:16px;padding-top:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.tile b{display:block;font-family:var(--display);font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums}
+.tile span{font-size:13px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.item{border-left:4px solid var(--line);padding:2px 0 2px 12px;display:flex;flex-direction:column;gap:2px}
+.item.warn{border-color:var(--warn)} .item.crit{border-color:var(--crit)} .item.tip{border-color:var(--accent)}
+.item small,.muted{color:var(--muted);font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-size:14px;padding:4px 10px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.chip.good{background:var(--good-bg);color:var(--good);border-color:transparent}
+.chip.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.chip.crit{background:var(--crit-bg);color:var(--crit);border-color:transparent}
+label{font-size:14px;font-weight:500;color:var(--muted);display:flex;flex-direction:column;gap:4px;min-width:0}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;cursor:pointer;text-decoration:none;text-align:center;display:inline-block}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:6px 10px;font-size:14px}
+.btn.danger{color:var(--crit)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.ex{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.set{display:grid;grid-template-columns:28px 1fr 1fr 36px;gap:8px;align-items:center}
+.set span{font-family:var(--display);font-size:18px;color:var(--muted)}
+.set button{padding:8px 0}
+.err{color:var(--crit);font-size:14px}
+.note{background:var(--accent-soft);border-radius:10px;padding:12px;font-size:14px}
+.big{font-family:var(--display);font-size:36px;line-height:1;font-variant-numeric:tabular-nums}
+.sess-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.sess-head b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.lifts{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.lifts i{font-style:normal;color:var(--ink)}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px}
+svg.spark{width:100%;height:auto;display:block}
+[hidden]{display:none !important}
+@media (max-width:360px){.tile b{font-size:24px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Training Log</h1>
+    <div class="status" id="status">Loading…</div>
+  </header>
+  <nav aria-label="Sections">
+    <a href="#today" data-tab="today">Today</a>
+    <a href="#log" data-tab="log">Log</a>
+    <a href="#history" data-tab="history">History</a>
+    <a href="#setup" data-tab="setup">Setup</a>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<script>
+"use strict";
+/* ---------- Reference data ---------- */
+const GROUPS = ["Chest","Back","Shoulders","Quads","Hamstrings & glutes","Arms","Core"];
+// n: name, g: main group, also: other groups it trains, swap: alternative to consider + why
+const EXERCISES = [
+  {n:"Bench press",g:"Chest",also:["Arms"]},
+  {n:"Dumbbell bench press",g:"Chest",also:["Arms"]},
+  {n:"Incline dumbbell press",g:"Chest",also:["Shoulders"]},
+  {n:"Push-up",g:"Chest",also:["Arms"]},
+  {n:"Dips",g:"Chest",also:["Arms"]},
+  {n:"Machine chest press",g:"Chest",swap:["Dumbbell bench press","Each arm has to do its own work and steady the load, so you train more muscle for the same time."]},
+  {n:"Smith machine bench",g:"Chest",swap:["Bench press","A free bar makes you control the bar path, which trains the stabilising muscles the fixed track takes over."]},
+  {n:"Cable or pec deck fly",g:"Chest"},
+  {n:"Pull-up or chin-up",g:"Back",also:["Arms"]},
+  {n:"Lat pulldown",g:"Back",also:["Arms"],swap:["Pull-up or chin-up","Once you can pull close to your body weight, pull-ups load the same muscles harder and work grip and core as well."]},
+  {n:"Barbell row",g:"Back",also:["Arms"]},
+  {n:"Dumbbell row",g:"Back",also:["Arms"]},
+  {n:"Seated cable row",g:"Back",also:["Arms"]},
+  {n:"Overhead press",g:"Shoulders",also:["Arms"]},
+  {n:"Dumbbell shoulder press",g:"Shoulders",also:["Arms"]},
+  {n:"Machine shoulder press",g:"Shoulders",swap:["Overhead press","Pressing a free weight standing also trains your trunk to hold you steady."]},
+  {n:"Lateral raise",g:"Shoulders"},
+  {n:"Face pull",g:"Shoulders",also:["Back"]},
+  {n:"Back squat",g:"Quads",also:["Hamstrings & glutes"]},
+  {n:"Front squat",g:"Quads",also:["Core"]},
+  {n:"Bulgarian split squat",g:"Quads",also:["Hamstrings & glutes"]},
+  {n:"Lunge",g:"Quads",also:["Hamstrings & glutes"]},
+  {n:"Leg press",g:"Quads",swap:["Back squat","Squats load the same muscles and add the hips and trunk. A split squat is a good option if your back prefers less load."]},
+  {n:"Leg extension",g:"Quads",swap:["Bulgarian split squat","It works the quads through a longer range and adds glutes and single-leg balance."]},
+  {n:"Deadlift",g:"Hamstrings & glutes",also:["Back"]},
+  {n:"Romanian deadlift",g:"Hamstrings & glutes",also:["Back"]},
+  {n:"Hip thrust",g:"Hamstrings & glutes"},
+  {n:"Nordic curl",g:"Hamstrings & glutes"},
+  {n:"Kettlebell swing",g:"Hamstrings & glutes"},
+  {n:"Leg curl",g:"Hamstrings & glutes",swap:["Romanian deadlift","It loads the hamstrings at long length along with the glutes and back. Nordic curls are another strong option."]},
+  {n:"Barbell curl",g:"Arms"},
+  {n:"Dumbbell curl",g:"Arms"},
+  {n:"Triceps pushdown",g:"Arms"},
+  {n:"Skull crusher",g:"Arms"},
+  {n:"Close-grip bench press",g:"Arms",also:["Chest"]},
+  {n:"Triceps kickback",g:"Arms",swap:["Dips","Kickbacks only load the triceps at the top. Dips or close-grip bench load them through the whole movement."]},
+  {n:"Plank",g:"Core"},
+  {n:"Hanging leg raise",g:"Core"},
+  {n:"Ab wheel rollout",g:"Core"},
+  {n:"Pallof press",g:"Core"},
+  {n:"Farmer's carry",g:"Core"},
+  {n:"Crunch or sit-up",g:"Core",swap:["Hanging leg raise","It trains the abs harder with less repeated bending of the lower back. Ab wheel rollouts work well too."]}
+];
+const EX_BY_NAME = Object.fromEntries(EXERCISES.map(e=>[e.n,e]));
+// Approximate MET values (energy cost relative to rest) for light / moderate / hard effort.
+const TYPES = {
+  weights:{label:"Weights",met:[3.5,5,6]},
+  bjj:{label:"Jiu jitsu",met:[5.3,7.5,10.3]},
+  muaythai:{label:"Muay Thai",met:[5.8,7.8,10.3]},
+  rugbytrain:{label:"Rugby training",met:[6,8.3,10]},
+  rugbygame:{label:"Rugby game",met:[7,8.3,10]},
+  walk:{label:"Walk",met:[2.8,3.5,4.3]},
+  run:{label:"Run",met:[7,9.8,11.5]},
+  cardio:{label:"Bike or cardio machine",met:[4.8,6.8,8.8]},
+  circuit:{label:"Circuit or conditioning",met:[4.3,6,8]},
+  mobility:{label:"Stretch or mobility",met:[2.3,2.5,3]}
+};
+const INTENSITY = ["Light","Moderate","Hard"];
+
+/* ---------- State and storage ---------- */
+const CACHE_KEY = "training-log-v1";
+const state = {settings:{weightKg:"",overdueDays:7,shortcutName:"Log Gym kJ"},sessions:[]};
+let cache = {mode:"local",unsynced:[]};
+let col = null, lastSaved = null, progressEx = "";
+let draft = newDraft();
+
+function newDraft(){return {date:today(),type:"weights",intensity:1,minutes:"",notes:"",exercises:[]};}
+function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function daysSince(dateStr){return Math.round((new Date(today()+"T00:00")-new Date(dateStr+"T00:00"))/86400000);}
+function fmtDate(s){return new Date(s+"T00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"});}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function num(n){return Math.round(n).toLocaleString("en-AU");}
+function calcKj(type,intensity,minutes,kg){const t=TYPES[type]||TYPES.weights;return Math.round(t.met[intensity]*kg*(minutes/60)*4.184);}
+function setStatus(t){document.getElementById("status").textContent=t;}
+
+function readCache(){
+  try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return;const c=JSON.parse(raw);
+    if(c.settings)Object.assign(state.settings,c.settings);
+    if(Array.isArray(c.sessions))state.sessions=c.sessions;
+    cache.mode=c.mode||"local";cache.unsynced=c.unsynced||[];
+    if(c.draft)draft=Object.assign(newDraft(),c.draft);
+  }catch(e){}
+}
+function writeCache(){
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify({mode:cache.mode,unsynced:cache.unsynced,settings:state.settings,sessions:state.sessions,draft}));}catch(e){}
+}
+function sortSessions(){state.sessions.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));}
+function timeout(ms){return new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms));}
+
+async function initStore(){
+  readCache();sortSessions();route();
+  try{
+    if(window.claude&&typeof window.claude.use==="function"){
+      const [db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")]);
+      if(db&&user){const uid=await user.id();if(uid)col=db.collection("data/users/"+uid);}
+    }
+  }catch(e){col=null;}
+  if(!col){cache.mode="local";writeCache();setStatus(backupStatus());return;}
+  try{
+    const snap=await Promise.race([col.limit(1000).get(),timeout(10000)]);
+    const cloud=[];let cloudSettings=null;
+    snap.docs.forEach(d=>{const v=d.data();if(!v)return;if(d.id==="settings")cloudSettings=v;else cloud.push(JSON.parse(JSON.stringify(v)));});
+    const have=new Set(cloud.map(s=>s.id));
+    // Upload anything that only exists on this device: first-time move, or saves that failed earlier.
+    const pending=state.sessions.filter(s=>!have.has(s.id)&&(cache.mode==="local"||cache.unsynced.includes(s.id)));
+    for(const s of pending){await col.doc(s.id).set(JSON.parse(JSON.stringify(s)));cloud.push(s);}
+    if(cloudSettings)Object.assign(state.settings,cloudSettings);
+    else if(state.settings.weightKg)await col.doc("settings").set(JSON.parse(JSON.stringify(state.settings)));
+    state.sessions=cloud;sortSessions();cache.mode="cloud";cache.unsynced=[];writeCache();
+    setStatus("Saved to your account");route();
+  }catch(e){
+    setStatus("Can't reach saved data. Showing this device's copy.");
+  }
+}
+async function persistSession(s){
+  writeCache();
+  if(!col)return true;
+  try{await col.doc(s.id).set(JSON.parse(JSON.stringify(s)));return true;}
+  catch(e){cache.unsynced.push(s.id);writeCache();setStatus("Not synced yet. Kept on this device.");return false;}
+}
+async function removeSession(id){
+  state.sessions=state.sessions.filter(s=>s.id!==id);cache.unsynced=cache.unsynced.filter(x=>x!==id);writeCache();
+  if(col){try{await col.doc(id).delete();}catch(e){setStatus("Couldn't delete from your account. Try again later.");}}
+}
+async function persistSettings(){
+  writeCache();
+  if(col){try{await col.doc("settings").set(JSON.parse(JSON.stringify(state.settings)));}catch(e){setStatus("Settings not synced yet.");}}
+}
+
+function backupStatus(){
+  const n=state.sessions.length,b=state.settings.lastBackup;
+  if(!n)return "Stored on this phone";
+  if(!b)return "Stored on this phone. Not backed up yet.";
+  const d=daysSince(b);return "Stored on this phone. Last backup "+(d<=0?"today":d+" day"+(d===1?"":"s")+" ago")+".";
+}
+function backupText(){return JSON.stringify({app:"training-log",version:1,exported:new Date().toISOString(),settings:state.settings,sessions:state.sessions},null,1);}
+function markBackedUp(){state.settings.lastBackup=today();writeCache();setStatus(backupStatus());}
+async function saveBackupFile(msg){
+  const name="training-log-backup-"+today()+".json",text=backupText();
+  try{
+    const file=new File([text],name,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:"Training Log backup"});markBackedUp();msg.textContent="Backup shared. Choose Save to Files to keep it.";return;}
+  }catch(e){if(e&&e.name==="AbortError"){msg.textContent="Backup cancelled.";return;}}
+  try{
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();a.remove();
+    markBackedUp();msg.textContent="Backup file downloaded.";
+  }catch(e){msg.textContent="Couldn't create a file here. Use Copy backup as text and paste it into Notes.";}
+}
+function restoreBackup(text,msg){
+  let data;try{data=JSON.parse(text);}catch(e){msg.textContent="That file isn't a Training Log backup.";return;}
+  if(!data||data.app!=="training-log"||!Array.isArray(data.sessions)){msg.textContent="That file isn't a Training Log backup.";return;}
+  const have=new Set(state.sessions.map(s=>s.id));let added=0;
+  data.sessions.forEach(s=>{if(s&&s.id&&s.date&&!have.has(s.id)){state.sessions.push(s);added++;}});
+  if(data.settings&&!state.settings.weightKg)Object.assign(state.settings,data.settings);
+  sortSessions();writeCache();renderSetup();
+  document.getElementById("b-msg").textContent=added+" session"+(added===1?"":"s")+" restored. Sessions already on this phone were kept.";
+}
+/* ---------- Analysis ---------- */
+function exGroups(ex){const lib=EX_BY_NAME[ex.name];const gs=[ex.group||(lib&&lib.g)];if(lib&&lib.also)gs.push(...lib.also);return gs.filter(Boolean);}
+function lastByGroup(){
+  const out={};
+  state.sessions.forEach(s=>(s.exercises||[]).forEach(ex=>exGroups(ex).forEach(g=>{if(!out[g]||s.date>out[g])out[g]=s.date;})));
+  return out;
+}
+function ideasFor(group){
+  const recent=new Set();state.sessions.slice(0,6).forEach(s=>(s.exercises||[]).forEach(e=>recent.add(e.name)));
+  const pool=EXERCISES.filter(e=>e.g===group&&!e.swap);
+  const fresh=pool.filter(e=>!recent.has(e.n));
+  return (fresh.length>=2?fresh:pool).slice(0,3).map(e=>e.n);
+}
+function topSet(ex){let kg=0,reps=0;(ex.sets||[]).forEach(st=>{const k=+st.kg||0,r=+st.reps||0;if(k>kg||(k===kg&&r>reps)){kg=k;reps=r;}});return {kg,reps};}
+function exerciseHistory(name){
+  const out=[];state.sessions.forEach(s=>(s.exercises||[]).forEach(ex=>{if(ex.name===name&&ex.sets&&ex.sets.length)out.push({date:s.date,ex,top:topSet(ex)});}));
+  return out; // newest first
+}
+function buildPrompts(){
+  const due=[],limit=+state.settings.overdueDays||7,last=lastByGroup();
+  const hasWeights=state.sessions.some(s=>(s.exercises||[]).length);
+  if(hasWeights){
+    GROUPS.forEach(g=>{
+      const d=last[g]?daysSince(last[g]):null;
+      if(d===null)due.push({level:"warn",title:g+" not logged yet",text:"Try: "+ideasFor(g).join(", ")+"."});
+      else if(d>limit)due.push({level:d>limit*2?"crit":"warn",days:d,title:g+": "+d+" days since you trained it",text:"Try: "+ideasFor(g).join(", ")+"."});
+    });
+  }
+  // Activities you do regularly that have gone quiet
+  const byType={};state.sessions.forEach(s=>{(byType[s.type]=byType[s.type]||[]).push(s.date);});
+  Object.keys(byType).forEach(t=>{
+    if(byType[t].length<2||!TYPES[t])return;
+    const d=daysSince(byType[t][0]);
+    if(d>Math.max(limit,10))due.push({level:"warn",days:d,title:TYPES[t].label+": "+d+" days since your last session",text:"You have logged "+byType[t].length+" of these before."});
+  });
+  due.sort((a,b)=>(b.days||999)-(a.days||999));
+  return due;
+}
+function buildTips(){
+  const tips=[],seen=new Set();
+  const recent=state.sessions.filter(s=>daysSince(s.date)<=60);
+  recent.forEach(s=>(s.exercises||[]).forEach(ex=>{
+    const lib=EX_BY_NAME[ex.name];
+    if(lib&&lib.swap&&!seen.has(ex.name)){seen.add(ex.name);tips.push({title:"Consider "+lib.swap[0]+" in place of "+ex.name,text:lib.swap[1]});}
+  }));
+  // Stalled lifts: same top weight and no extra reps across the last three sessions
+  const names=new Set();recent.forEach(s=>(s.exercises||[]).forEach(e=>names.add(e.name)));
+  names.forEach(n=>{
+    const h=exerciseHistory(n).slice(0,3);
+    if(h.length===3&&h[0].top.kg>0&&h.every(x=>x.top.kg===h[0].top.kg)&&h[0].top.reps<=h[2].top.reps){
+      tips.push({title:n+" has sat at "+h[0].top.kg+" kg for three sessions",text:"Aim for one more rep per set next time, or the smallest weight jump available. If it still stalls, swap in a close variation for a few weeks."});
+    }
+  });
+  // Balance over the last four weeks, counted in sets
+  const sets={};state.sessions.filter(s=>daysSince(s.date)<=28).forEach(s=>(s.exercises||[]).forEach(ex=>{const g=ex.group||(EX_BY_NAME[ex.name]||{}).g;if(g)sets[g]=(sets[g]||0)+(ex.sets||[]).length;}));
+  const push=(sets["Chest"]||0)+(sets["Shoulders"]||0),pull=sets["Back"]||0;
+  const lower=(sets["Quads"]||0)+(sets["Hamstrings & glutes"]||0),upper=push+pull+(sets["Arms"]||0);
+  if(push>=6&&push>pull*1.5)tips.push({title:"More pulling would balance your pressing",text:"Last four weeks: "+push+" pressing sets against "+pull+" for your back. Add rows or pull-ups until they are close to even."});
+  if(pull>=6&&pull>push*1.5)tips.push({title:"More pressing would balance your pulling",text:"Last four weeks: "+pull+" back sets against "+push+" pressing sets."});
+  if(upper>=10&&lower<upper*0.4)tips.push({title:"Your legs are getting less work than your upper body",text:"Last four weeks: "+lower+" leg sets against "+upper+" upper-body sets."});
+  if((sets["Quads"]||0)>=6&&(sets["Quads"]||0)>(sets["Hamstrings & glutes"]||0)*2)tips.push({title:"Add hamstring and glute work",text:"Your quads are getting more than double the sets. Romanian deadlifts or hip thrusts would even it out."});
+  return tips.slice(0,6);
+}
+
+/* ---------- Views ---------- */
+const view=document.getElementById("view");
+function route(){
+  const tab=["today","log","history","setup"].includes(location.hash.slice(1))?location.hash.slice(1):"today";
+  document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.tab===tab)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
+  ({today:renderToday,log:renderLog,history:renderHistory,setup:renderSetup})[tab]();
+}
+window.addEventListener("hashchange",()=>{route();window.scrollTo(0,0);});
+
+function renderToday(){
+  const wk=state.sessions.filter(s=>daysSince(s.date)<7&&daysSince(s.date)>=0);
+  const mins=wk.reduce((a,s)=>a+(+s.minutes||0),0),kj=wk.reduce((a,s)=>a+(+s.kj||0),0);
+  const due=buildPrompts(),tips=buildTips(),last=lastByGroup(),limit=+state.settings.overdueDays||7;
+  let h=`<div class="tiles">
+    <div class="tile"><b>${wk.length}</b><span>sessions, last 7 days</span></div>
+    <div class="tile"><b>${num(mins)}</b><span>minutes</span></div>
+    <div class="tile"><b>${num(kj)}</b><span>kJ burned</span></div></div>`;
+  if(!state.sessions.length){
+    h+=`<section class="card"><h2>Start here</h2><p>Log your first session and this page will start telling you what is overdue and what to change.</p>
+      <div class="btns"><a class="btn primary" href="#log">Log a session</a>${state.settings.weightKg?"":`<a class="btn" href="#setup">Enter your body weight</a>`}</div></section>`;
+  }else{
+    h+=`<section class="card"><h2>Due for attention</h2>`;
+    h+=due.length?`<ul class="list">${due.map(d=>`<li class="item ${d.level}"><h3>${esc(d.title)}</h3><small>${esc(d.text)}</small></li>`).join("")}</ul>`
+      :`<p class="muted">Nothing overdue. Every area has been trained in the last ${limit} days.</p>`;
+    h+=`</section>`;
+    h+=`<section class="card"><h2>Days since each area</h2><div class="chips">${GROUPS.map(g=>{
+      const d=last[g]?daysSince(last[g]):null;const cls=d===null?"":d>limit*2?"crit":d>limit?"warn":"good";
+      return `<span class="chip ${cls}">${esc(g)} · ${d===null?"never":d===0?"today":d+"d"}</span>`;}).join("")}</div></section>`;
+    h+=`<section class="card"><h2>Worth considering</h2>`;
+    h+=tips.length?`<ul class="list">${tips.map(t=>`<li class="item tip"><h3>${esc(t.title)}</h3><small>${esc(t.text)}</small></li>`).join("")}</ul>`
+      :`<p class="muted">No changes to suggest yet. Suggestions appear as your lifting history builds up.</p>`;
+    h+=`</section>`;
+  }
+  view.innerHTML=h;
+}
+
+function exerciseOptions(sel){
+  let h=`<option value="">Choose exercise…</option>`;
+  GROUPS.forEach(g=>{h+=`<optgroup label="${esc(g)}">`+EXERCISES.filter(e=>e.g===g).map(e=>`<option${e.n===sel?" selected":""}>${esc(e.n)}</option>`).join("")+`</optgroup>`;});
+  h+=`<option value="__custom"${sel==="__custom"?" selected":""}>Other (type your own)…</option>`;
+  return h;
+}
+function lastTimeHint(name){
+  const h=exerciseHistory(name)[0];if(!h)return "";
+  return `<small class="muted">Last time (${fmtDate(h.date)}): ${h.ex.sets.map(s=>esc((s.kg||0)+" kg × "+(s.reps||0))).join(", ")}</small>`;
+}
+function renderLog(){
+  const kg=+state.settings.weightKg||0,isW=draft.type==="weights";
+  let h="";
+  if(lastSaved){
+    h+=`<section class="card"><h2>Session saved</h2><div><span class="big">${num(lastSaved.kj)} kJ</span> <span class="muted">about ${num(lastSaved.kj/4.184)} kcal</span></div>${healthButtons(lastSaved.kj)}</section>`;
+  }
+  h+=`<section class="card"><h2>Log a session</h2>
+    <div class="row"><label for="f-date">Date<input id="f-date" type="date" value="${esc(draft.date)}" max="${today()}"></label>
+    <label for="f-type">Activity<select id="f-type">${Object.keys(TYPES).map(k=>`<option value="${k}"${k===draft.type?" selected":""}>${esc(TYPES[k].label)}</option>`).join("")}</select></label></div>
+    <div class="row"><label for="f-min">Minutes<input id="f-min" type="number" inputmode="numeric" min="1" value="${esc(draft.minutes)}" placeholder="60"></label>
+    <label for="f-int">Effort<select id="f-int">${INTENSITY.map((n,i)=>`<option value="${i}"${i===+draft.intensity?" selected":""}>${n}</option>`).join("")}</select></label></div>
+    ${kg?"":`<label for="f-kg">Your body weight (kg), needed for the kJ figure<input id="f-kg" type="number" inputmode="decimal" min="30" placeholder="85"></label>`}
+    <p class="muted" id="f-est"></p>`;
+  if(isW){
+    h+=`<div id="ex-list" class="list">${draft.exercises.map((ex,i)=>{
+      const custom=ex.custom;
+      return `<div class="ex" data-i="${i}">
+        <label for="ex-${i}">Exercise ${i+1}<select id="ex-${i}" data-f="name">${exerciseOptions(custom?"__custom":ex.name)}</select></label>
+        ${custom?`<div class="row"><label for="exn-${i}">Name<input id="exn-${i}" data-f="cname" value="${esc(ex.name)}" placeholder="Exercise name"></label>
+          <label for="exg-${i}">Area<select id="exg-${i}" data-f="group">${GROUPS.map(g=>`<option${g===ex.group?" selected":""}>${esc(g)}</option>`).join("")}</select></label></div>`:""}
+        ${ex.name&&!custom?lastTimeHint(ex.name):""}
+        ${ex.sets.map((st,j)=>`<div class="set" data-j="${j}"><span>${j+1}</span>
+          <input id="kg-${i}-${j}" aria-label="Weight in kg, set ${j+1}" data-f="kg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="kg" value="${esc(st.kg)}">
+          <input id="rp-${i}-${j}" aria-label="Reps, set ${j+1}" data-f="reps" type="number" inputmode="numeric" min="0" placeholder="reps" value="${esc(st.reps)}">
+          <button class="btn small" data-a="del-set" aria-label="Remove set ${j+1}">×</button></div>`).join("")}
+        <div class="btns"><button class="btn small" data-a="add-set">Add set</button><button class="btn small danger" data-a="del-ex">Remove exercise</button></div>
+      </div>`;}).join("")}</div>
+      <button class="btn" id="add-ex">Add exercise</button>`;
+  }
+  h+=`<label for="f-notes">Notes (optional)<textarea id="f-notes" rows="2">${esc(draft.notes)}</textarea></label>
+    <p class="err" id="f-err" hidden></p>
+    <button class="btn primary" id="save">Save session</button></section>`;
+  view.innerHTML=h;updateEstimate();
+}
+function updateEstimate(){
+  const el=document.getElementById("f-est");if(!el)return;
+  const kgEl=document.getElementById("f-kg");const kg=+state.settings.weightKg||(kgEl?+kgEl.value:0);const m=+draft.minutes;
+  el.textContent=(kg>0&&m>0)?"Estimated burn: "+num(calcKj(draft.type,+draft.intensity,m,kg))+" kJ":"";
+}
+function healthButtons(kj){
+  const name=state.settings.shortcutName||"Log Gym kJ";
+  return `<div class="btns"><a class="btn primary" href="shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=text&text=${kj}">Add to Apple Health</a>
+    <button class="btn" data-copy="${kj}">Copy kJ</button></div>
+    <small class="muted">Needs the one-off shortcut described under Setup. If the button does nothing, copy the figure and run the shortcut yourself.</small>`;
+}
+
+function sparkline(points){
+  if(points.length<2)return "";
+  const W=300,H=70,p=8,vals=points.map(x=>x.kg),min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
+  const xy=points.map((pt,i)=>[p+i*(W-2*p)/(points.length-1),H-p-((pt.kg-min)/span)*(H-2*p)]);
+  const line=xy.map(c=>c[0].toFixed(1)+","+c[1].toFixed(1)).join(" ");
+  const end=xy[xy.length-1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Top weight over time, from ${min} to ${max} kg">
+    <line x1="${p}" y1="${H-p}" x2="${W-p}" y2="${H-p}" stroke="var(--line)"/>
+    <polygon points="${p},${H-p} ${line} ${W-p},${H-p}" fill="var(--accent-soft)"/>
+    <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+    <circle cx="${end[0].toFixed(1)}" cy="${end[1].toFixed(1)}" r="4" fill="var(--accent)"/></svg>`;
+}
+function renderHistory(){
+  const names=[];state.sessions.forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name&&!names.includes(e.name))names.push(e.name);}));names.sort();
+  if(!names.includes(progressEx))progressEx=names[0]||"";
+  let h="";
+  if(names.length){
+    const hist=exerciseHistory(progressEx).slice().reverse(),pts=hist.map(x=>({kg:x.top.kg}));
+    const best=hist.reduce((a,x)=>x.top.kg>a.kg?x.top:a,{kg:0,reps:0}),latest=hist[hist.length-1];
+    h+=`<section class="card"><h2>Lift progress</h2><label for="p-ex">Exercise<select id="p-ex">${names.map(n=>`<option${n===progressEx?" selected":""}>${esc(n)}</option>`).join("")}</select></label>
+      ${sparkline(pts)}<div class="chips"><span class="chip">Latest top set · ${latest.top.kg} kg × ${latest.top.reps}</span><span class="chip">Best · ${best.kg} kg × ${best.reps}</span><span class="chip">${hist.length} session${hist.length===1?"":"s"}</span></div></section>`;
+  }
+  if(!state.sessions.length)h+=`<section class="card"><h2>History</h2><p class="muted">No sessions logged yet.</p><div class="btns"><a class="btn primary" href="#log">Log a session</a></div></section>`;
+  state.sessions.forEach(s=>{
+    const t=TYPES[s.type]||{label:s.type};
+    h+=`<section class="card" data-id="${esc(s.id)}"><div class="sess-head"><h3>${esc(t.label)} · ${fmtDate(s.date)}</h3><b>${num(s.kj||0)} kJ</b></div>
+      <p class="muted">${esc(s.minutes)} min · ${INTENSITY[s.intensity]||""} effort${s.weightKg?" · at "+esc(s.weightKg)+" kg":""}</p>
+      ${(s.exercises||[]).length?`<div class="lifts">${s.exercises.map(ex=>`<span><i>${esc(ex.name)}</i> ${ex.sets.map(st=>esc((st.kg||0)+"×"+(st.reps||0))).join(", ")}</span>`).join("")}</div>`:""}
+      ${s.notes?`<p class="muted">${esc(s.notes)}</p>`:""}
+      <div class="btns"><a class="btn small" href="shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName||"Log Gym kJ")}&input=text&text=${s.kj||0}">Add to Health</a>
+      <button class="btn small" data-copy="${s.kj||0}">Copy kJ</button><button class="btn small danger" data-a="del-sess">Delete</button></div></section>`;
+  });
+  view.innerHTML=h;
+}
+function renderSetup(){
+  const s=state.settings;
+  view.innerHTML=`<section class="card"><h2>Your details</h2>
+    <div class="row"><label for="s-kg">Body weight (kg)<input id="s-kg" type="number" inputmode="decimal" min="30" value="${esc(s.weightKg)}" placeholder="85"></label>
+    <label for="s-days">Flag an area after (days)<input id="s-days" type="number" inputmode="numeric" min="2" max="30" value="${esc(s.overdueDays)}"></label></div>
+    <label for="s-short">Name of your Health shortcut<input id="s-short" value="${esc(s.shortcutName)}"></label>
+    <div class="btns"><button class="btn primary" id="s-save">Save details</button></div><p class="muted" id="s-msg"></p></section>
+    <section class="card"><h2>Backup</h2>
+    <p>Your sessions are stored on this phone only. Save a backup file now and then, and keep it in Files or iCloud Drive.</p>
+    <div class="btns"><button class="btn primary" id="b-save">Save backup file</button><button class="btn" id="b-copy">Copy backup as text</button></div>
+    <label for="b-file">Restore from a backup file<input id="b-file" type="file" accept=".json,application/json"></label>
+    <p class="muted" id="b-msg">${esc(backupStatus())}</p></section>
+    <section class="card"><h2>Send kJ to Apple Health</h2>
+    <p>A web app cannot write to Apple Health directly. A one-off Shortcut on your iPhone does it instead, and the Add to Apple Health buttons hand it the figure.</p>
+    <ol class="steps"><li>Open the Shortcuts app, tap +, and name the shortcut exactly <b>${esc(s.shortcutName||"Log Gym kJ")}</b>.</li>
+    <li>Add the action <b>Log Health Sample</b>. Set Type to Active Energy, Value to Shortcut Input, and the unit to kJ.</li>
+    <li>In the Receive block at the top, set "If there's no input" to <b>Get Clipboard</b>. Then Copy kJ followed by running the shortcut also works.</li>
+    <li>Run it once and allow Shortcuts to write Active Energy to Health.</li></ol>
+    <p class="muted">If you wear an Apple Watch during training it already records active energy, so adding this figure as well would count the session twice.</p></section>
+    <section class="card"><h2>How the kJ figure is worked out</h2>
+    <p>kJ = effort rating (MET) × body weight in kg × hours × 4.184. MET values come from standard published tables for each activity at light, moderate and hard effort. Treat the result as an estimate, usually within about 20 percent.</p></section>`;
+}
+
+/* ---------- Events ---------- */
+view.addEventListener("input",e=>{
+  const t=e.target,exEl=t.closest(".ex");
+  if(exEl&&t.dataset.f){
+    const ex=draft.exercises[+exEl.dataset.i],setEl=t.closest(".set");
+    if(setEl)ex.sets[+setEl.dataset.j][t.dataset.f]=t.value;
+    else if(t.dataset.f==="cname")ex.name=t.value;
+    writeCache();return;
+  }
+  if(t.id==="f-min"){draft.minutes=t.value;updateEstimate();writeCache();}
+  if(t.id==="f-kg")updateEstimate();
+  if(t.id==="f-notes"){draft.notes=t.value;writeCache();}
+});
+view.addEventListener("change",e=>{
+  const t=e.target,exEl=t.closest(".ex");
+  if(exEl&&t.dataset.f==="name"){
+    const ex=draft.exercises[+exEl.dataset.i];
+    if(t.value==="__custom"){ex.custom=true;ex.name="";ex.group=GROUPS[0];}
+    else{ex.custom=false;ex.name=t.value;ex.group=(EX_BY_NAME[t.value]||{}).g||"";}
+    writeCache();renderLog();return;
+  }
+  if(exEl&&t.dataset.f==="group"){draft.exercises[+exEl.dataset.i].group=t.value;writeCache();return;}
+  if(t.id==="f-type"){draft.type=t.value;writeCache();renderLog();}
+  if(t.id==="f-int"){draft.intensity=+t.value;updateEstimate();writeCache();}
+  if(t.id==="f-date"){draft.date=t.value;writeCache();}
+  if(t.id==="p-ex"){progressEx=t.value;renderHistory();}
+  if(t.id==="b-file"&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>restoreBackup(String(r.result),document.getElementById("b-msg"));r.readAsText(t.files[0]);}
+});
+view.addEventListener("click",async e=>{
+  const t=e.target.closest("button,a");if(!t)return;
+  if(t.dataset.copy){
+    try{await navigator.clipboard.writeText(String(t.dataset.copy));t.textContent="Copied";}catch(err){t.textContent=t.dataset.copy+" kJ";}
+    return;
+  }
+  const exEl=t.closest(".ex");
+  if(exEl&&t.dataset.a){
+    const i=+exEl.dataset.i,ex=draft.exercises[i];
+    if(t.dataset.a==="add-set"){const l=ex.sets[ex.sets.length-1]||{kg:"",reps:""};ex.sets.push({kg:l.kg,reps:l.reps});}
+    if(t.dataset.a==="del-set"){ex.sets.splice(+t.closest(".set").dataset.j,1);}
+    if(t.dataset.a==="del-ex"){draft.exercises.splice(i,1);}
+    writeCache();renderLog();return;
+  }
+  if(t.id==="add-ex"){draft.exercises.push({name:"",group:"",custom:false,sets:[{kg:"",reps:""}]});writeCache();renderLog();return;}
+  if(t.id==="save"){saveDraft();return;}
+  if(t.dataset.a==="del-sess"){
+    if(t.dataset.armed){await removeSession(t.closest("[data-id]").dataset.id);renderHistory();}
+    else{t.dataset.armed="1";t.textContent="Tap again to delete";}
+    return;
+  }
+  if(t.id==="b-save"){await saveBackupFile(document.getElementById("b-msg"));return;}
+  if(t.id==="b-copy"){
+    const msg=document.getElementById("b-msg");
+    try{await navigator.clipboard.writeText(backupText());markBackedUp();msg.textContent="Backup copied. Paste it into Notes or an email to yourself.";}
+    catch(e){msg.textContent="Couldn't copy here. Use Save backup file.";}
+    return;
+  }
+  if(t.id==="s-save"){
+    const kg=+document.getElementById("s-kg").value,days=+document.getElementById("s-days").value,msg=document.getElementById("s-msg");
+    if(!(kg>=30&&kg<=250)){msg.textContent="Enter your body weight in kg, between 30 and 250.";return;}
+    state.settings.weightKg=kg;state.settings.overdueDays=(days>=2&&days<=30)?days:7;
+    state.settings.shortcutName=document.getElementById("s-short").value.trim()||"Log Gym kJ";
+    await persistSettings();renderSetup();document.getElementById("s-msg").textContent="Saved.";
+  }
+});
+async function saveDraft(){
+  const err=document.getElementById("f-err"),fail=m=>{err.textContent=m;err.hidden=false;};
+  const kgEl=document.getElementById("f-kg");let kg=+state.settings.weightKg||0;
+  if(!kg&&kgEl){kg=+kgEl.value;}
+  if(!(kg>=30&&kg<=250))return fail("Enter your body weight in kg so the kJ figure can be worked out.");
+  const m=+draft.minutes;if(!(m>0&&m<=600))return fail("Enter how many minutes the session took.");
+  if(!draft.date)return fail("Choose the date of the session.");
+  let exercises=[];
+  if(draft.type==="weights"){
+    exercises=draft.exercises.map(ex=>({name:(ex.name||"").trim(),group:ex.group||(EX_BY_NAME[ex.name]||{}).g||"",
+      sets:ex.sets.filter(s=>+s.reps>0).map(s=>({kg:+s.kg||0,reps:+s.reps}))})).filter(ex=>ex.name&&ex.sets.length);
+    if(!exercises.length)return fail("Add at least one exercise with a set that has reps filled in.");
+  }
+  if(!state.settings.weightKg){state.settings.weightKg=kg;persistSettings();}
+  const s={id:"s_"+Date.now(),ts:Date.now(),date:draft.date,type:draft.type,intensity:+draft.intensity,minutes:m,weightKg:kg,
+    kj:calcKj(draft.type,+draft.intensity,m,kg),notes:(draft.notes||"").trim(),exercises};
+  state.sessions.push(s);sortSessions();lastSaved=s;draft=newDraft();
+  await persistSession(s);
+  if(!col)setStatus(backupStatus());
+  renderLog();window.scrollTo(0,0);
+}
+
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
+initStore();
+</script>
+</body>
+</html>
